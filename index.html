@@ -1,0 +1,653 @@
+Claude finished the response
+
+I need you to make me an app that I can use to track how much food my cat has eaten. It should be able to handle multiple profiles. I imagine I would host using github pages.
+
+Basically I just want to keep track of when I give food. How much food is left in bowl. And some basic charts and statistics. It doesn't have to be super fancy.
+Read a file, created a file, and 2 more tools
+
+I built it as a single index.html file, so it's ready for GitHub Pages as is.
+
+How it works:
+
+    Add food: Use this when you fill the bowl. There's an optional box for how much was left in the bowl before you added more. If you fill that in, the app can work out how much your cat ate.
+    Weigh leftovers: Use this any time you check the bowl. It records what's left and calculates how much was eaten since the last time you checked.
+    Throwing food out: Both forms have a checkbox for when you throw old food out. That food isn't counted as eaten.
+    What you'll see: A bowl picture showing about how much food is in it now, today's eaten and given totals, a 7-day average, and a bar chart of given vs. eaten per day. You can switch the chart between 7, 14, and 30 days.
+    Multiple cats: Each cat gets its own tab, with its own unit (g, oz, cups, or pouches) and an optional daily target that shows up as a line on the chart.
+    History: Every entry is listed by day, and you can delete any of them. You can also pick a past time when logging, in case you forgot to log earlier.
+
+To host it: Create a new GitHub repo, upload index.html, then go to Settings → Pages. Choose "Deploy from a branch" with main / root. After a minute it'll be live at yourname.github.io/reponame.
+
+One thing to know: your data is saved in the browser on the device you use, not on GitHub. Your phone and your laptop will each have their own separate log. Use the "Download backup" button at the bottom now and then. "Restore backup" loads that file back in, and you can also use it to move your data to another device.
+Index
+Code·HTML 
+
+Oh. I should be able to go back and modify the amount and time, just in case I fat finger something.
+Ran a command, shared files
+
+Every entry in the history now has an Edit button next to the ✕. It opens the same form you used to log the entry, already filled in. You can change the amount, the time, the leftover amount, or the "threw it out" checkbox, then hit Save changes.
+
+The bowl estimate, the daily totals, and the chart all recalculate from the corrected entry. That includes moving an entry to a different time, since it gets re-sorted into the right place.
+
+Your saved data carries over. Just replace the old index.html in your repo with this one.
+Index
+Code·HTML 
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Index · HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Food Bowl – cat feeding log</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F3F5F1;
+    --card: #FFFFFF;
+    --ink: #1F2A33;
+    --muted: #66727C;
+    --line: #DDE2DC;
+    --bowl: #2F6DB5;
+    --kibble: #D9A02B;
+    --eaten: #4F8A62;
+    --danger: #B3413A;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #151B20; --card: #1E262D; --ink: #E8ECEF; --muted: #97A3AD;
+      --line: #2F3942; --bowl: #6FA3E0; --kibble: #E8B64A; --eaten: #74B488; --danger: #E0736B;
+    }
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px; line-height: 1.45;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+  h1 { font-size: 1.1rem; font-weight: 900; margin: 0; }
+  h2 { font-size: 1.15rem; font-weight: 800; margin: 0 0 12px; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--bowl); outline-offset: 2px; }
+ 
+  /* Header / cat switcher */
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .cats { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+  .cat-chip {
+    border: 2px solid var(--line); background: var(--card); border-radius: 999px;
+    padding: 6px 14px; font-weight: 800;
+  }
+  .cat-chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .ghost { border: none; background: none; color: var(--muted); font-weight: 700; padding: 6px 8px; border-radius: 8px; }
+  .ghost:hover { color: var(--ink); }
+ 
+  /* Hero: the bowl */
+  .hero {
+    display: grid; grid-template-columns: minmax(180px, 260px) 1fr; gap: 20px; align-items: center;
+    background: var(--card); border-radius: 22px; padding: 20px; margin-bottom: 14px;
+  }
+  .hero svg { width: 100%; height: auto; display: block; }
+  .level { font-size: 2.6rem; font-weight: 900; line-height: 1; letter-spacing: -0.02em; }
+  .level small { font-size: 1rem; font-weight: 700; color: var(--muted); letter-spacing: 0; }
+  .hero p { margin: 6px 0 0; color: var(--muted); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .btn {
+    border: none; border-radius: 12px; padding: 11px 16px; font-weight: 800;
+    background: var(--ink); color: var(--paper);
+  }
+  .btn.feed { background: var(--kibble); color: #231A05; }
+  .btn.check { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+  .btn.danger { background: var(--danger); color: #fff; }
+  .btn.plain { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 2px var(--line); }
+ 
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--card); border-radius: 14px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 1.35rem; font-weight: 900; }
+  .stat span { color: var(--muted); font-size: 0.9rem; }
+  .progress { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .progress i { display: block; height: 100%; background: var(--eaten); }
+ 
+  section.panel { background: var(--card); border-radius: 18px; padding: 16px; margin-bottom: 14px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 2px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: none; background: none; padding: 4px 10px; font-weight: 700; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--line); color: var(--ink); }
+  .chart-wrap { overflow-x: auto; }
+  .chart-wrap svg { width: 100%; min-width: 420px; height: auto; display: block; }
+  .legend { display: flex; gap: 14px; font-size: 0.85rem; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+ 
+  /* History */
+  .day { margin-top: 12px; }
+  .day h3 { font-size: 0.9rem; font-weight: 800; color: var(--muted); margin: 0 0 4px; }
+  .entry { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .entry .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .entry .txt { flex: 1; min-width: 0; }
+  .entry .txt small { color: var(--muted); display: block; }
+  .entry .time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .entry button { border: none; background: none; color: var(--muted); padding: 4px 8px; border-radius: 6px; }
+  .entry button:hover { color: var(--ink); }
+  .entry button[data-del]:hover { color: var(--danger); }
+  .empty { color: var(--muted); padding: 8px 0; }
+ 
+  footer { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: 0.9rem; }
+ 
+  /* Dialogs */
+  dialog {
+    border: none; border-radius: 18px; padding: 20px; width: min(420px, calc(100% - 32px));
+    background: var(--card); color: var(--ink);
+  }
+  dialog::backdrop { background: rgba(10, 15, 20, 0.45); }
+  label { display: block; font-weight: 700; margin-bottom: 12px; }
+  label.check { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+  input[type=number], input[type=text], input[type=datetime-local], select {
+    display: block; width: 100%; margin-top: 4px; padding: 10px 12px;
+    border: 2px solid var(--line); border-radius: 10px; background: var(--paper);
+  }
+  .hint { font-weight: 400; color: var(--muted); font-size: 0.88rem; display: block; }
+  .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+  .dialog-actions .spacer { flex: 1; }
+ 
+  .welcome { text-align: center; padding: 48px 16px; }
+  .welcome p { color: var(--muted); max-width: 40ch; margin: 8px auto 20px; }
+ 
+  @media (max-width: 560px) {
+    .hero { grid-template-columns: 1fr; text-align: center; }
+    .hero svg { max-width: 220px; margin: 0 auto; }
+    .actions { justify-content: center; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    #food { transition: y .5s ease, height .5s ease; }
+  }
+</style>
+</head>
+<body>
+<main id="app"></main>
+ 
+<!-- Add food -->
+<dialog id="feedDlg">
+  <form method="dialog" id="feedForm">
+    <h2 id="feedTitle">Add food</h2>
+    <label>Amount added (<span class="unit"></span>)
+      <input type="number" name="amount" min="0" step="any" required inputmode="decimal">
+    </label>
+    <label>Left in bowl before adding (<span class="unit"></span>)
+      <span class="hint">Optional. Weigh what's left first and the app works out how much was eaten.</span>
+      <input type="number" name="leftover" min="0" step="any" inputmode="decimal">
+    </label>
+    <label class="check"><input type="checkbox" name="discard"> Threw the old food out before adding</label>
+    <label>When
+      <input type="datetime-local" name="time" required>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn feed" id="feedSubmit">Add food</button>
+    </div>
+  </form>
+</dialog>
+ 
+<!-- Weigh leftovers -->
+<dialog id="checkDlg">
+  <form method="dialog" id="checkForm">
+    <h2 id="checkTitle">Weigh leftovers</h2>
+    <label>Food left in bowl (<span class="unit"></span>)
+      <input type="number" name="remaining" min="0" step="any" required inputmode="decimal">
+    </label>
+    <label class="check"><input type="checkbox" name="emptied"> Threw the leftovers out afterwards</label>
+    <label>When
+      <input type="datetime-local" name="time" required>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Save</button>
+    </div>
+  </form>
+</dialog>
+ 
+<!-- Cat profile -->
+<dialog id="catDlg">
+  <form method="dialog" id="catForm">
+    <h2 id="catDlgTitle">Add a cat</h2>
+    <label>Name
+      <input type="text" name="name" required maxlength="40" autocomplete="off">
+    </label>
+    <label>Unit
+      <select name="unit">
+        <option value="g">grams (g)</option>
+        <option value="oz">ounces (oz)</option>
+        <option value="cups">cups</option>
+        <option value="pouches">pouches / cans</option>
+      </select>
+    </label>
+    <label>Daily target
+      <span class="hint">Optional. Shown as a line on the chart.</span>
+      <input type="number" name="target" min="0" step="any" inputmode="decimal">
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger" id="deleteCatBtn" hidden>Delete cat</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Save</button>
+    </div>
+  </form>
+</dialog>
+ 
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+ 
+<script>
+(() => {
+  const KEY = "catfood-tracker-v1";
+  const $ = (s, el = document) => el.querySelector(s);
+  const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+ 
+  // ---------- Storage ----------
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && Array.isArray(d.cats)) return d;
+      }
+    } catch (e) { console.warn("Could not read saved data", e); }
+    return { cats: [], activeId: null, range: 14 };
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch (e) { alert("Couldn't save: your browser storage may be full or disabled."); }
+  }
+  let state = load();
+  const activeCat = () => state.cats.find(c => c.id === state.activeId) || state.cats[0] || null;
+ 
+  // ---------- Helpers ----------
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const round = n => Math.round(n * 10) / 10;
+  const fmt = (n, cat) => `${round(n).toLocaleString()} ${cat.unit}`;
+  const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+  const toLocalInput = t => { const d = new Date(t); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+  const timeStr = t => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  function ago(t) {
+    const m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m} min ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} h ${m % 60} min ago`;
+    const d = Math.floor(h / 24);
+    return `${d} day${d > 1 ? "s" : ""} ago`;
+  }
+  function dayLabel(key) {
+    const today = dayKey(Date.now());
+    const yest = dayKey(Date.now() - 864e5);
+    if (key === today) return "Today";
+    if (key === yest) return "Yesterday";
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  }
+ 
+  // ---------- Core calculation ----------
+  // Walks events in time order, tracking the estimated amount in the bowl.
+  // Eating is only known when the bowl is weighed (a "check", or a feed with a leftover amount).
+  function compute(cat) {
+    const events = [...cat.events].sort((a, b) => a.t - b.t);
+    let level = 0;
+    const rows = [];
+    for (const e of events) {
+      let eaten = null, discarded = 0;
+      if (e.type === "feed") {
+        if (e.leftover != null) {
+          eaten = Math.max(0, level - e.leftover);
+          level = e.leftover;
+        }
+        if (e.discard) { discarded = level; level = 0; }
+        level += e.amount;
+      } else if (e.type === "check") {
+        eaten = Math.max(0, level - e.remaining);
+        level = e.remaining;
+        if (e.emptied) { discarded = level; level = 0; }
+      }
+      rows.push({ ...e, eaten, discarded, levelAfter: level });
+    }
+    return { rows, level };
+  }
+ 
+  function dailyTotals(cat, rows, days) {
+    const map = {};
+    for (const r of rows) {
+      const k = dayKey(r.t);
+      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0 };
+      if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
+      if (r.eaten != null) map[k].eaten += r.eaten;
+    }
+    const out = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
+      const k = dayKey(d);
+      out.push({ key: k, date: d, ...(map[k] || { given: 0, eaten: 0, feeds: 0 }) });
+    }
+    return out;
+  }
+ 
+  // ---------- Rendering ----------
+  function bowlSVG(level, capacity) {
+    const pct = capacity > 0 ? Math.max(0, Math.min(1, level / capacity)) : 0;
+    const top = 70, bottom = 150, h = (bottom - top) * pct;
+    return `
+    <svg viewBox="0 0 240 170" role="img" aria-label="Bowl about ${Math.round(pct*100)}% full">
+      <defs>
+        <clipPath id="bowlClip"><path d="M30 70 H210 Q205 150 120 152 Q35 150 30 70 Z"/></clipPath>
+        <pattern id="kib" width="14" height="10" patternUnits="userSpaceOnUse">
+          <rect width="14" height="10" fill="var(--kibble)"/>
+          <ellipse cx="4" cy="3" rx="3.2" ry="2.2" fill="#000" opacity=".13"/>
+          <ellipse cx="11" cy="8" rx="3.2" ry="2.2" fill="#000" opacity=".13"/>
+        </pattern>
+      </defs>
+      <ellipse cx="120" cy="160" rx="95" ry="7" fill="var(--line)"/>
+      <g clip-path="url(#bowlClip)">
+        <rect x="20" y="60" width="200" height="100" fill="var(--paper)"/>
+        <rect id="food" x="20" y="${bottom - h}" width="200" height="${h + 4}" fill="url(#kib)"/>
+      </g>
+      <path d="M30 70 H210 Q205 150 120 152 Q35 150 30 70 Z" fill="none" stroke="var(--bowl)" stroke-width="7" stroke-linejoin="round"/>
+      <rect x="22" y="62" width="196" height="12" rx="6" fill="var(--bowl)"/>
+      <text x="120" y="118" text-anchor="middle" font-family="Nunito, sans-serif" font-weight="900" font-size="15" fill="var(--bowl)" opacity=".85">${esc((activeCat()?.name || "").slice(0, 14))}</text>
+    </svg>`;
+  }
+ 
+  function chartSVG(cat, days) {
+    const W = 640, H = 230, padL = 40, padR = 10, padT = 14, padB = 30;
+    const maxVal = Math.max(1, cat.target || 0, ...days.map(d => Math.max(d.given, d.eaten))) * 1.1;
+    const n = days.length, bw = (W - padL - padR) / n;
+    const y = v => padT + (H - padT - padB) * (1 - v / maxVal);
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Food given and eaten per day">`;
+    // gridlines
+    for (let i = 0; i <= 4; i++) {
+      const v = maxVal / 1.1 * i / 4, yy = y(v);
+      s += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" stroke="var(--line)"/>`;
+      s += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${round(v)}</text>`;
+    }
+    const labelEvery = n > 14 ? 5 : n > 7 ? 2 : 1;
+    days.forEach((d, i) => {
+      const x = padL + i * bw;
+      const gw = bw * 0.7, ew = bw * 0.44;
+      const gx = x + (bw - gw) / 2, ex = x + (bw - ew) / 2;
+      const tip = `${d.date.toLocaleDateString([], { month: "short", day: "numeric" })}: given ${round(d.given)}, eaten ${round(d.eaten)} ${cat.unit}`;
+      s += `<g><title>${esc(tip)}</title>`;
+      s += `<rect x="${gx}" y="${y(d.given)}" width="${gw}" height="${Math.max(0, y(0) - y(d.given))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
+      s += `<rect x="${ex}" y="${y(d.eaten)}" width="${ew}" height="${Math.max(0, y(0) - y(d.eaten))}" rx="3" fill="var(--eaten)"/>`;
+      s += `<rect x="${x}" y="${padT}" width="${bw}" height="${H - padT - padB}" fill="transparent"/></g>`;
+      if ((n - 1 - i) % labelEvery === 0) {
+        const lbl = n <= 7 ? d.date.toLocaleDateString([], { weekday: "short" }) : `${d.date.getMonth() + 1}/${d.date.getDate()}`;
+        s += `<text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)">${lbl}</text>`;
+      }
+    });
+    if (cat.target) {
+      s += `<line x1="${padL}" x2="${W - padR}" y1="${y(cat.target)}" y2="${y(cat.target)}" stroke="var(--ink)" stroke-dasharray="5 4" opacity=".6"/>`;
+    }
+    return s + "</svg>";
+  }
+ 
+  function render() {
+    const app = $("#app");
+    const cat = activeCat();
+    if (!cat) {
+      app.innerHTML = `
+        <div class="welcome">
+          <div style="font-size:3rem">🐈</div>
+          <h2>Start by adding your cat</h2>
+          <p>Log each time you fill the bowl and weigh what's left, and you'll see how much they're really eating.</p>
+          <button class="btn feed" id="firstCat">Add a cat</button>
+          <p style="margin-top:28px"><button class="ghost" id="importBtn">Restore from a backup file</button></p>
+        </div>`;
+      $("#firstCat").onclick = () => openCatDlg(null);
+      $("#importBtn").onclick = () => $("#importFile").click();
+      return;
+    }
+    state.activeId = cat.id;
+    const { rows, level } = compute(cat);
+    const range = state.range || 14;
+    const days = dailyTotals(cat, rows, range);
+    const week = dailyTotals(cat, rows, 7);
+    const today = week[week.length - 1];
+    const weekEaten = week.reduce((a, d) => a + d.eaten, 0);
+    const daysWithData = Math.max(1, week.filter(d => d.eaten > 0 || d.given > 0).length);
+    const lastFeed = [...rows].reverse().find(r => r.type === "feed");
+    const capacity = Math.max(level, ...rows.filter(r => r.type === "feed").slice(-10).map(r => r.levelAfter), 1);
+ 
+    // history grouped by day, newest first
+    const recent = [...rows].reverse().slice(0, 60);
+    const groups = [];
+    for (const r of recent) {
+      const k = dayKey(r.t);
+      if (!groups.length || groups[groups.length - 1].key !== k) groups.push({ key: k, items: [] });
+      groups[groups.length - 1].items.push(r);
+    }
+ 
+    app.innerHTML = `
+      <header>
+        <h1>🐈 Food bowl</h1>
+        <div class="cats" role="group" aria-label="Choose cat">
+          ${state.cats.map(c => `<button class="cat-chip" data-cat="${c.id}" aria-pressed="${c.id === cat.id}">${esc(c.name)}</button>`).join("")}
+          <button class="ghost" id="addCat">+ Add cat</button>
+        </div>
+        <button class="ghost" id="editCat">Edit ${esc(cat.name)}</button>
+      </header>
+ 
+      <div class="hero">
+        ${bowlSVG(level, capacity)}
+        <div>
+          <div class="level">${round(level).toLocaleString()} <small>${esc(cat.unit)} in the bowl (estimate)</small></div>
+          <p>${lastFeed ? `Last fed ${ago(lastFeed.t)} (${fmt(lastFeed.amount, cat)})` : "No feedings logged yet."}</p>
+          <div class="actions">
+            <button class="btn feed" id="feedBtn">Add food</button>
+            <button class="btn check" id="checkBtn">Weigh leftovers</button>
+          </div>
+        </div>
+      </div>
+ 
+      <div class="stats">
+        <div class="stat"><b>${fmt(today.eaten, cat)}</b><span>eaten today</span>
+          ${cat.target ? `<div class="progress" title="${Math.round(today.eaten / cat.target * 100)}% of daily target"><i style="width:${Math.min(100, today.eaten / cat.target * 100)}%"></i></div>` : ""}
+        </div>
+        <div class="stat"><b>${fmt(today.given, cat)}</b><span>given today (${today.feeds} feeding${today.feeds === 1 ? "" : "s"})</span></div>
+        <div class="stat"><b>${fmt(weekEaten / daysWithData, cat)}</b><span>average eaten per day, last 7 days</span></div>
+        <div class="stat"><b>${fmt(weekEaten, cat)}</b><span>eaten in the last 7 days</span></div>
+      </div>
+ 
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Daily food</h2>
+          <div class="seg" role="group" aria-label="Chart range">
+            ${[7, 14, 30].map(r => `<button data-range="${r}" aria-pressed="${r === range}">${r} days</button>`).join("")}
+          </div>
+        </div>
+        <div class="chart-wrap">${chartSVG(cat, days)}</div>
+        <div class="legend">
+          <span><i style="background:var(--kibble);opacity:.5"></i>Given</span>
+          <span><i style="background:var(--eaten)"></i>Eaten</span>
+          ${cat.target ? `<span><i style="background:var(--ink);opacity:.6;height:2px;vertical-align:3px"></i>Daily target (${fmt(cat.target, cat)})</span>` : ""}
+        </div>
+      </section>
+ 
+      <section class="panel">
+        <h2>History</h2>
+        ${groups.length ? groups.map(g => `
+          <div class="day"><h3>${dayLabel(g.key)}</h3>
+            ${g.items.map(r => entryHTML(r, cat)).join("")}
+          </div>`).join("") : `<div class="empty">Nothing logged yet. Tap “Add food” when you fill the bowl.</div>`}
+      </section>
+ 
+      <footer>
+        <button class="ghost" id="exportBtn">Download backup</button>
+        <button class="ghost" id="importBtn">Restore backup</button>
+      </footer>`;
+ 
+    // wire up
+    app.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { state.activeId = b.dataset.cat; save(); render(); });
+    app.querySelectorAll("[data-range]").forEach(b => b.onclick = () => { state.range = +b.dataset.range; save(); render(); });
+    app.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+      if (!confirm("Delete this entry?")) return;
+      cat.events = cat.events.filter(e => e.id !== b.dataset.del); save(); render();
+    });
+    app.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => {
+      const ev = cat.events.find(e => e.id === b.dataset.edit);
+      if (ev) openEntryDlg(ev.type === "feed" ? "#feedDlg" : "#checkDlg", ev);
+    });
+    $("#addCat").onclick = () => openCatDlg(null);
+    $("#editCat").onclick = () => openCatDlg(cat);
+    $("#feedBtn").onclick = () => openEntryDlg("#feedDlg");
+    $("#checkBtn").onclick = () => openEntryDlg("#checkDlg");
+    $("#exportBtn").onclick = exportData;
+    $("#importBtn").onclick = () => $("#importFile").click();
+  }
+ 
+  function entryHTML(r, cat) {
+    let color, title, detail = [];
+    if (r.type === "feed") {
+      color = "var(--kibble)"; title = `Added ${fmt(r.amount, cat)}`;
+      if (r.leftover != null) detail.push(`${fmt(r.leftover, cat)} was left`);
+      if (r.eaten != null) detail.push(`${fmt(r.eaten, cat)} eaten since last check`);
+      if (r.discarded) detail.push(`${fmt(r.discarded, cat)} thrown out`);
+    } else {
+      color = "var(--eaten)"; title = `${fmt(r.remaining, cat)} left in bowl`;
+      detail.push(`${fmt(r.eaten, cat)} eaten since last check`);
+      if (r.emptied) detail.push(`leftovers thrown out`);
+    }
+    return `<div class="entry">
+      <span class="dot" style="background:${color}"></span>
+      <div class="txt">${title}${detail.length ? `<small>${detail.join(", ")}</small>` : ""}</div>
+      <span class="time">${timeStr(r.t)}</span>
+      <button data-edit="${r.id}" data-type="${r.type}" aria-label="Edit entry">Edit</button>
+      <button data-del="${r.id}" aria-label="Delete entry">✕</button>
+    </div>`;
+  }
+ 
+  // ---------- Dialogs ----------
+  document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest("dialog").close());
+ 
+  let editingEntryId = null;
+  function openEntryDlg(sel, entry) {
+    const dlg = $(sel), form = dlg.querySelector("form");
+    form.reset();
+    editingEntryId = entry ? entry.id : null;
+    form.time.value = toLocalInput(entry ? entry.t : Date.now());
+    if (sel === "#feedDlg") {
+      $("#feedTitle").textContent = entry ? "Edit feeding" : "Add food";
+      $("#feedSubmit").textContent = entry ? "Save changes" : "Add food";
+      if (entry) {
+        form.amount.value = entry.amount;
+        form.leftover.value = entry.leftover ?? "";
+        form.discard.checked = !!entry.discard;
+      }
+    } else {
+      $("#checkTitle").textContent = entry ? "Edit leftovers" : "Weigh leftovers";
+      if (entry) {
+        form.remaining.value = entry.remaining;
+        form.emptied.checked = !!entry.emptied;
+      }
+    }
+    dlg.querySelectorAll(".unit").forEach(u => u.textContent = activeCat().unit);
+    dlg.showModal();
+    const first = form.querySelector("input[type=number]");
+    first && first.focus();
+  }
+ 
+  function saveEntry(cat, data) {
+    const existing = editingEntryId && cat.events.find(e => e.id === editingEntryId);
+    if (existing) Object.assign(existing, data);
+    else cat.events.push({ id: uid(), ...data });
+    editingEntryId = null;
+  }
+ 
+  $("#feedForm").addEventListener("submit", e => {
+    const f = e.target, cat = activeCat();
+    const amount = parseFloat(f.amount.value);
+    if (!(amount >= 0)) { e.preventDefault(); return; }
+    const lo = f.leftover.value.trim();
+    saveEntry(cat, {
+      type: "feed", t: new Date(f.time.value).getTime() || Date.now(),
+      amount, leftover: lo === "" ? null : parseFloat(lo), discard: f.discard.checked
+    });
+    save(); render();
+  });
+ 
+  $("#checkForm").addEventListener("submit", e => {
+    const f = e.target, cat = activeCat();
+    const remaining = parseFloat(f.remaining.value);
+    if (!(remaining >= 0)) { e.preventDefault(); return; }
+    saveEntry(cat, {
+      type: "check", t: new Date(f.time.value).getTime() || Date.now(),
+      remaining, emptied: f.emptied.checked
+    });
+    save(); render();
+  });
+ 
+  let editingCatId = null;
+  function openCatDlg(cat) {
+    const dlg = $("#catDlg"), f = $("#catForm");
+    f.reset();
+    editingCatId = cat ? cat.id : null;
+    $("#catDlgTitle").textContent = cat ? `Edit ${cat.name}` : "Add a cat";
+    $("#deleteCatBtn").hidden = !cat;
+    if (cat) { f.name.value = cat.name; f.unit.value = cat.unit; f.target.value = cat.target || ""; }
+    dlg.showModal();
+    f.name.focus();
+  }
+  $("#catForm").addEventListener("submit", e => {
+    const f = e.target;
+    const name = f.name.value.trim();
+    if (!name) { e.preventDefault(); return; }
+    const target = parseFloat(f.target.value) || 0;
+    if (editingCatId) {
+      Object.assign(state.cats.find(c => c.id === editingCatId), { name, unit: f.unit.value, target });
+    } else {
+      const c = { id: uid(), name, unit: f.unit.value, target, events: [] };
+      state.cats.push(c); state.activeId = c.id;
+    }
+    save(); render();
+  });
+  $("#deleteCatBtn").onclick = () => {
+    const c = state.cats.find(c => c.id === editingCatId);
+    if (!c || !confirm(`Delete ${c.name} and all of their history? This can't be undone.`)) return;
+    state.cats = state.cats.filter(x => x.id !== c.id);
+    state.activeId = state.cats[0]?.id || null;
+    $("#catDlg").close(); save(); render();
+  };
+ 
+  // ---------- Backup ----------
+  function exportData() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `cat-food-backup-${dayKey(Date.now())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  $("#importFile").addEventListener("change", async e => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || !Array.isArray(data.cats)) throw new Error("not a backup");
+      if (!confirm("Replace everything in this browser with the backup?")) return;
+      state = data; save(); render();
+    } catch {
+      alert("That file isn't a backup from this app. Choose a .json file made with “Download backup”.");
+    }
+  });
+ 
+  // refresh "x min ago" every minute
+  setInterval(() => { if (!document.querySelector("dialog[open]")) render(); }, 60000);
+  render();
+})();
+</script>
+</body>
+</html>
