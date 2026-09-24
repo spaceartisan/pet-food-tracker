@@ -85,6 +85,15 @@
   .seg { display: inline-flex; border: 2px solid var(--line); border-radius: 10px; overflow: hidden; }
   .seg button { border: none; background: none; padding: 4px 10px; font-weight: 700; color: var(--muted); }
   .seg button[aria-pressed="true"] { background: var(--line); color: var(--ink); }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button {
+    border: none; background: none; padding: 2px 4px 6px; margin-right: 10px;
+    font-size: 1.15rem; font-weight: 800; color: var(--muted);
+    border-bottom: 3px solid transparent;
+  }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--kibble); }
+  .tabs button:hover { color: var(--ink); }
+  .panel-head { margin-bottom: 10px; }
   .chart-wrap { overflow-x: auto; }
   .chart-wrap svg { width: 100%; min-width: 420px; height: auto; display: block; }
   .legend { display: flex; gap: 14px; font-size: 0.85rem; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
@@ -415,6 +424,7 @@
     state.activeId = cat.id;
     const { rows, level } = compute(cat);
     const range = state.range || 14;
+    const tab = state.chartTab === "kcal" ? "kcal" : "food";
     const days = dailyTotals(cat, rows, range);
     const week = dailyTotals(cat, rows, 7);
     const today = week[week.length - 1];
@@ -474,22 +484,23 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Daily food</h2>
+          <div class="tabs" role="tablist" aria-label="Chart">
+            <button role="tab" id="tab-food" data-tab="food" aria-selected="${tab === "food"}" aria-controls="chartPanel" tabindex="${tab === "food" ? 0 : -1}">Daily food</button>
+            <button role="tab" id="tab-kcal" data-tab="kcal" aria-selected="${tab === "kcal"}" aria-controls="chartPanel" tabindex="${tab === "kcal" ? 0 : -1}">Calories</button>
+          </div>
           <div class="seg" role="group" aria-label="Chart range">
             ${[7, 14, 30].map(r => `<button data-range="${r}" aria-pressed="${r === range}">${r} days</button>`).join("")}
           </div>
         </div>
-        <div class="chart-wrap">${chartSVG(days, cat.unit, cat.target ? [{ v: cat.target, color: "var(--ink)", dash: "6 4" }] : [], "Food given and eaten per day")}</div>
-        <div class="legend">
-          <span><i style="background:var(--kibble);opacity:.5"></i>Given</span>
-          <span><i style="background:var(--eaten)"></i>Eaten</span>
-          ${cat.target ? `<span>${lineKey("var(--ink)", "6 4")}Daily target (${fmt(cat.target, cat)})</span>` : ""}
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head"><h2>Daily calories</h2></div>
-        ${kpu ? `
+        <div id="chartPanel" role="tabpanel" aria-labelledby="tab-${tab}">
+        ${tab === "food" ? `
+          <div class="chart-wrap">${chartSVG(days, cat.unit, cat.target ? [{ v: cat.target, color: "var(--ink)", dash: "6 4" }] : [], "Food given and eaten per day")}</div>
+          <div class="legend">
+            <span><i style="background:var(--kibble);opacity:.5"></i>Given</span>
+            <span><i style="background:var(--eaten)"></i>Eaten</span>
+            ${cat.target ? `<span>${lineKey("var(--ink)", "6 4")}Daily target (${fmt(cat.target, cat)})</span>` : ""}
+          </div>
+        ` : kpu ? `
           <div class="chart-wrap">${chartSVG(kcalDays, "kcal", [
             ...(targetKcal ? [{ v: targetKcal, color: "var(--ink)", dash: "6 4" }] : []),
             ...(need ? [{ v: need, color: "var(--bowl)", dash: "2 3" }] : [])
@@ -502,6 +513,7 @@
           </div>
           ${need ? "" : `<p class="panel-note">Add ${esc(cat.name)}'s weight in “Edit ${esc(cat.name)}” to see their estimated daily need.</p>`}
         ` : `<p class="panel-note">Add calories per ${esc(unitSingular(cat.unit))} in “Edit ${esc(cat.name)}” to see calories eaten each day.</p>`}
+        </div>
       </section>
 
       <section class="panel">
@@ -519,6 +531,14 @@
 
     // wire up
     app.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { state.activeId = b.dataset.cat; save(); render(); });
+    const tabs = [...app.querySelectorAll("[data-tab]")];
+    tabs.forEach((b, i) => {
+      b.onclick = () => { state.chartTab = b.dataset.tab; save(); render(); $(`#tab-${state.chartTab}`).focus(); };
+      b.onkeydown = e => {
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length].click();
+      };
+    });
     app.querySelectorAll("[data-range]").forEach(b => b.onclick = () => { state.range = +b.dataset.range; save(); render(); });
     app.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
       if (!confirm("Delete this entry?")) return;
