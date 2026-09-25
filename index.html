@@ -1,41 +1,3 @@
-Claude finished the response
-
-I need you to make me an app that I can use to track how much food my cat has eaten. It should be able to handle multiple profiles. I imagine I would host using github pages.
-
-Basically I just want to keep track of when I give food. How much food is left in bowl. And some basic charts and statistics. It doesn't have to be super fancy.
-Read a file, created a file, and 2 more tools
-
-I built it as a single index.html file, so it's ready for GitHub Pages as is.
-
-How it works:
-
-    Add food: Use this when you fill the bowl. There's an optional box for how much was left in the bowl before you added more. If you fill that in, the app can work out how much your cat ate.
-    Weigh leftovers: Use this any time you check the bowl. It records what's left and calculates how much was eaten since the last time you checked.
-    Throwing food out: Both forms have a checkbox for when you throw old food out. That food isn't counted as eaten.
-    What you'll see: A bowl picture showing about how much food is in it now, today's eaten and given totals, a 7-day average, and a bar chart of given vs. eaten per day. You can switch the chart between 7, 14, and 30 days.
-    Multiple cats: Each cat gets its own tab, with its own unit (g, oz, cups, or pouches) and an optional daily target that shows up as a line on the chart.
-    History: Every entry is listed by day, and you can delete any of them. You can also pick a past time when logging, in case you forgot to log earlier.
-
-To host it: Create a new GitHub repo, upload index.html, then go to Settings → Pages. Choose "Deploy from a branch" with main / root. After a minute it'll be live at yourname.github.io/reponame.
-
-One thing to know: your data is saved in the browser on the device you use, not on GitHub. Your phone and your laptop will each have their own separate log. Use the "Download backup" button at the bottom now and then. "Restore backup" loads that file back in, and you can also use it to move your data to another device.
-Index
-Code·HTML 
-
-Oh. I should be able to go back and modify the amount and time, just in case I fat finger something.
-Ran a command, shared files
-
-Every entry in the history now has an Edit button next to the ✕. It opens the same form you used to log the entry, already filled in. You can change the amount, the time, the leftover amount, or the "threw it out" checkbox, then hit Save changes.
-
-The bowl estimate, the daily totals, and the chart all recalculate from the corrected entry. That includes moving an entry to a different time, since it gets re-sorted into the right place.
-
-Your saved data carries over. Just replace the old index.html in your repo with this one.
-Index
-Code·HTML 
-
-
-Claude is AI and can make mistakes. Please double-check responses.
-Index · HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -250,6 +212,29 @@ Index · HTML
       <span class="hint">Optional. Shown as a line on the charts.</span>
       <input type="number" name="target" min="0" step="any" inputmode="decimal">
     </label>
+    <label>Calories per <span class="unitName">can</span> (kcal)
+      <span class="hint">Optional. Printed on the label. Turns on the calorie chart.</span>
+      <input type="number" name="kcal" min="0" step="any" inputmode="decimal">
+    </label>
+    <label>Cat's weight
+      <span class="hint">Optional. Used to estimate daily calorie needs.</span>
+      <div class="row">
+        <input type="number" name="weight" min="0" step="any" inputmode="decimal" aria-label="Weight">
+        <select name="weightUnit" aria-label="Weight unit">
+          <option value="lb">lb</option>
+          <option value="kg">kg</option>
+        </select>
+      </div>
+    </label>
+    <label>Lifestyle
+      <select name="factor">
+        <option value="1.2">Adult, spayed or neutered</option>
+        <option value="1.4">Adult, not spayed or neutered</option>
+        <option value="1.0">Adult, inactive or senior</option>
+        <option value="0.8">Adult, needs to lose weight</option>
+        <option value="2.5">Kitten</option>
+      </select>
+    </label>
     <div class="dialog-actions">
       <button type="button" class="btn danger" id="deleteCatBtn" hidden>Delete cat</button>
       <span class="spacer"></span>
@@ -288,7 +273,10 @@ Index · HTML
   // ---------- Helpers ----------
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const round = n => Math.round(n * 10) / 10;
-  const fmt = (n, cat) => `${round(n).toLocaleString()} ${cat.unit}`;
+  const unitSingular = u => ({ g: "gram", oz: "ounce", cups: "cup", pouches: "pouch or can" }[u] || u);
+  const unitPlural = u => ({ g: "g", oz: "oz", cups: "cups", pouches: "pouches / cans" }[u] || u);
+  const unitFor = (n, unit) => round(n) === 1 ? ({ cups: "cup", pouches: "pouch" }[unit] || unit) : unit;
+  const fmt = (n, cat) => `${round(n).toLocaleString()} ${unitFor(n, cat.unit)}`;
   const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
   const toLocalInput = t => { const d = new Date(t); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const timeStr = t => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -671,7 +659,12 @@ Index · HTML
     editingCatId = cat ? cat.id : null;
     $("#catDlgTitle").textContent = cat ? `Edit ${cat.name}` : "Add a cat";
     $("#deleteCatBtn").hidden = !cat;
-    if (cat) { f.name.value = cat.name; f.unit.value = cat.unit; f.target.value = cat.target || ""; }
+    if (cat) {
+      f.elements.name.value = cat.name; f.elements.unit.value = cat.unit; f.elements.target.value = cat.target || "";
+      f.elements.kcal.value = cat.kcal || ""; f.elements.weight.value = cat.weight || "";
+      f.elements.weightUnit.value = cat.weightUnit || "lb"; f.elements.factor.value = String(cat.factor || 1.2);
+    }
+    updateUnitNames();
     dlg.showModal();
     f.elements.name.focus();
   }
@@ -679,7 +672,14 @@ Index · HTML
     const f = e.target;
     const name = f.elements.name.value.trim();
     if (!name) { e.preventDefault(); return; }
-    const target = parseFloat(f.target.value) || 0;
+    const fields = {
+      name, unit: f.elements.unit.value,
+      target: parseFloat(f.elements.target.value) || 0,
+      kcal: parseFloat(f.elements.kcal.value) || 0,
+      weight: parseFloat(f.elements.weight.value) || 0,
+      weightUnit: f.elements.weightUnit.value,
+      factor: parseFloat(f.elements.factor.value) || 1.2
+    };
     if (editingCatId) {
       Object.assign(state.cats.find(c => c.id === editingCatId), fields);
     } else {
