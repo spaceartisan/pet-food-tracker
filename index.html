@@ -301,7 +301,8 @@
 
   // ---------- Helpers ----------
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const round = n => Math.round(n * 10) / 10;
+  // Display rounding: 2 decimals so quarters (0.25, 0.75) show exactly. Saved data is never rounded.
+  const round = n => Math.round(n * 100) / 100;
   const unitSingular = u => ({ g: "gram", oz: "ounce", cups: "cup", pouches: "pouch or can" }[u] || u);
   const unitPlural = u => ({ g: "g", oz: "oz", cups: "cups", pouches: "pouches / cans" }[u] || u);
   const unitFor = (n, unit) => round(n) === 1 ? ({ cups: "cup", pouches: "pouch" }[unit] || unit) : unit;
