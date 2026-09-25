@@ -4,7 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Food Bowl – cat feeding log</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#F3F5F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151B20" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Food bowl">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800;900&display=swap" rel="stylesheet">
 <style>
@@ -114,6 +122,11 @@
   .empty { color: var(--muted); padding: 8px 0; }
 
   footer { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: 0.9rem; }
+  .footer-note { flex-basis: 100%; text-align: center; margin: 0; }
+  .backup-warn {
+    flex-basis: 100%; margin: 0 0 4px; padding: 10px 14px; border-radius: 12px;
+    background: var(--card); color: var(--ink); border-left: 4px solid var(--kibble);
+  }
 
   /* Dialogs */
   dialog {
@@ -548,6 +561,7 @@
       </section>
 
       <footer>
+        ${backupNote()}
         <button class="ghost" id="exportBtn">Download backup</button>
         <button class="ghost" id="importBtn">Restore backup</button>
       </footer>`;
@@ -714,13 +728,25 @@
   };
 
   // ---------- Backup ----------
+  // Data only lives in this browser, so nudge toward a backup every 30 days.
+  function backupNote() {
+    if (!state.cats.some(c => c.events.length)) return "";
+    const last = state.lastBackup;
+    if (!last || Date.now() - last > 30 * 864e5) {
+      return `<p class="backup-warn"><b>Last backup: ${last ? ago(last) : "never"}.</b> Your log is only saved in this browser, so download a backup now and then.</p>`;
+    }
+    return `<p class="footer-note">Last backup ${ago(last)}</p>`;
+  }
+
   function exportData() {
+    state.lastBackup = Date.now(); save();
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `cat-food-backup-${dayKey(Date.now())}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    render();
   }
   $("#importFile").addEventListener("change", async e => {
     const file = e.target.files[0]; e.target.value = "";
@@ -737,6 +763,13 @@
 
   // refresh "x min ago" every minute
   setInterval(() => { if (!document.querySelector("dialog[open]")) render(); }, 60000);
+  // Home-screen install / offline support
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    navigator.serviceWorker.register("sw.js").catch(e => console.warn("Service worker not registered", e));
+  }
+  // Ask the browser not to clear this site's storage when space runs low
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
   render();
 })();
 </script>
