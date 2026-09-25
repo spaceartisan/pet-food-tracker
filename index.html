@@ -94,10 +94,10 @@
   .seg { display: inline-flex; border: 2px solid var(--line); border-radius: 10px; overflow: hidden; }
   .seg button { border: none; background: none; padding: 4px 10px; font-weight: 700; color: var(--muted); }
   .seg button[aria-pressed="true"] { background: var(--line); color: var(--ink); }
-  .tabs { display: flex; gap: 4px; }
+  .tabs { display: flex; gap: 2px; flex-wrap: wrap; }
   .tabs button {
-    border: none; background: none; padding: 2px 4px 6px; margin-right: 10px;
-    font-size: 1.15rem; font-weight: 800; color: var(--muted);
+    border: none; background: none; padding: 2px 3px 6px; margin-right: 6px;
+    font-size: 1rem; font-weight: 800; color: var(--muted);
     border-bottom: 3px solid transparent;
   }
   .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--kibble); }
@@ -105,6 +105,10 @@
   .panel-head { margin-bottom: 10px; }
   .chart-wrap { overflow-x: auto; }
   .chart-wrap svg { width: 100%; min-width: 420px; height: auto; display: block; }
+  .chart-wrap svg.fit { min-width: 0; }
+  .cal-legend { align-items: center; gap: 4px; }
+  .cal-legend span:last-child { margin-left: 12px; }
+  .cal-legend > i { margin-right: 0; }
   .legend { display: flex; gap: 14px; font-size: 0.85rem; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
@@ -356,7 +360,8 @@
     const map = {};
     for (const r of rows) {
       const k = catDay(r.t);
-      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0 };
+      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      map[k].events++;
       if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
       if (r.eaten != null) map[k].eaten += r.eaten;
     }
@@ -364,7 +369,7 @@
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(Date.now() - dayStartMs); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
       const k = dayKey(d);
-      out.push({ key: k, date: d, ...(map[k] || { given: 0, eaten: 0, feeds: 0 }) });
+      out.push({ key: k, date: d, ...(map[k] || { given: 0, eaten: 0, feeds: 0, events: 0 }) });
     }
     return out;
   }
@@ -427,6 +432,104 @@
     return s + "</svg>";
   }
 
+  const shortDate = d => d.toLocaleDateString([], { month: "short", day: "numeric" });
+  const num = (v, isKcal) => isKcal ? Math.round(v).toLocaleString() : round(v).toLocaleString();
+
+  // GitHub-style grid: one square per day, columns are weeks (Sunday at top).
+  // m = { conv, ref, refLabel, unit, isKcal }
+  function calendarSVG(cat, rows, weeks, m) {
+    const wd = new Date(Date.now() - dayStartMs).getDay();
+    const days = dailyTotals(cat, rows, (weeks - 1) * 7 + wd + 1);
+    let ref = m.ref;
+    if (!ref) { // no target or need set: compare against his own typical day
+      const vals = days.filter(d => d.events && d.eaten > 0).map(d => d.eaten * m.conv).sort((a, b) => a - b);
+      ref = vals.length ? vals[Math.floor(vals.length / 2)] : 1;
+    }
+    const step = 16, cell = 13, left = 24, top = 18;
+    const W = left + weeks * step, H = top + 7 * step;
+    const shade = r => r < 0.25 ? 0.15 : r < 0.5 ? 0.35 : r < 0.8 ? 0.6 : r < 1.05 ? 0.85 : 1;
+    let s = `<svg class="cal" viewBox="0 0 ${W} ${H}" style="min-width:${weeks * 9 + left}px" role="img" aria-label="Calendar of daily eating">`;
+    ["M", "W", "F"].forEach((l, i) => {
+      s += `<text x="${left - 8}" y="${top + (i * 2 + 1) * step + cell - 2}" text-anchor="end" font-size="10" fill="var(--muted)">${l}</text>`;
+    });
+    const todayKey = days[days.length - 1].key;
+    days.forEach((d, i) => {
+      const col = Math.floor(i / 7), row = i % 7;
+      const x = left + col * step, y = top + row * step;
+      if (row === 0 && (d.date.getDate() <= 7 || (col === 0 && d.date.getDate() <= 17))) {
+        s += `<text x="${x}" y="11" font-size="10" fill="var(--muted)">${d.date.toLocaleDateString([], { month: "short" })}</text>`;
+      }
+      const v = d.eaten * m.conv;
+      const tip = d.events ? `${shortDate(d.date)}: ${num(v, m.isKcal)} ${m.unit} eaten (${Math.round(v / ref * 100)}% of ${m.refLabel})` : `${shortDate(d.date)}: nothing logged`;
+      const fill = d.events ? `fill="var(--eaten)" fill-opacity="${shade(v / ref)}"` : `fill="var(--line)" fill-opacity=".5"`;
+      const ring = d.key === todayKey ? ` stroke="var(--ink)" stroke-width="1.5"` : "";
+      s += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3" ${fill}${ring}><title>${esc(tip)}</title></rect>`;
+    });
+    return { svg: s + "</svg>", ref };
+  }
+
+  // 7-day rolling average of eating, through yesterday (today isn't finished yet).
+  function trendData(cat, rows, span, m) {
+    const all = dailyTotals(cat, rows, span + 7).slice(0, -1);
+    const pts = [];
+    for (let i = 6; i < all.length; i++) {
+      const win = all.slice(i - 6, i + 1).filter(d => d.events);
+      pts.push({ date: all[i].date, day: all[i].events ? all[i].eaten * m.conv : null,
+                 avg: win.length ? win.reduce((a, d) => a + d.eaten, 0) / win.length * m.conv : null });
+    }
+    return pts;
+  }
+  function trendSVG(pts, m) {
+    const W = 640, H = 230, padL = 44, padR = 10, padT = 14, padB = 30;
+    const vals = pts.flatMap(p => [p.day, p.avg]).filter(v => v != null);
+    const maxVal = Math.max(1, m.ref || 0, ...vals) * 1.1;
+    const n = pts.length;
+    const x = i => padL + (W - padL - padR) * (n > 1 ? i / (n - 1) : 0.5);
+    const y = v => padT + (H - padT - padB) * (1 - v / maxVal);
+    let s = `<svg class="fit" viewBox="0 0 ${W} ${H}" role="img" aria-label="Seven-day average of daily eating">`;
+    for (let i = 0; i <= 4; i++) {
+      const v = maxVal / 1.1 * i / 4, yy = y(v);
+      s += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" stroke="var(--line)"/>`;
+      s += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${num(v, maxVal > 50)}</text>`;
+    }
+    const labels = 5;
+    for (let k = 0; k < labels; k++) {
+      const i = Math.round(k * (n - 1) / (labels - 1));
+      s += `<text x="${x(i)}" y="${H - 10}" text-anchor="${k === 0 ? "start" : k === labels - 1 ? "end" : "middle"}" font-size="11" fill="var(--muted)">${shortDate(pts[i].date)}</text>`;
+    }
+    if (m.ref) s += `<line x1="${padL}" x2="${W - padR}" y1="${y(m.ref)}" y2="${y(m.ref)}" stroke="var(--bowl)" stroke-width="2" stroke-dasharray="2 3" opacity=".75"/>`;
+    pts.forEach((p, i) => {
+      if (p.day != null) s += `<circle cx="${x(i)}" cy="${y(p.day)}" r="2.6" fill="var(--kibble)" opacity=".55"><title>${esc(`${shortDate(p.date)}: ${num(p.day, m.isKcal)} ${m.unit}`)}</title></circle>`;
+    });
+    // line + soft area, broken where there's no data
+    let seg = [];
+    const flush = () => {
+      if (seg.length > 1) {
+        const line = seg.map(([i, v], j) => `${j ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+        s += `<path d="${line} L${x(seg[seg.length - 1][0]).toFixed(1)} ${y(0)} L${x(seg[0][0]).toFixed(1)} ${y(0)} Z" fill="var(--eaten)" opacity=".12"/>`;
+        s += `<path d="${line}" fill="none" stroke="var(--eaten)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+      } else if (seg.length === 1) {
+        s += `<circle cx="${x(seg[0][0])}" cy="${y(seg[0][1])}" r="3.5" fill="var(--eaten)"/>`;
+      }
+      seg = [];
+    };
+    pts.forEach((p, i) => p.avg == null ? flush() : seg.push([i, p.avg]));
+    flush();
+    return s + "</svg>";
+  }
+  function trendSummary(pts, m) {
+    const idx = pts.map((p, i) => p.avg != null ? i : -1).filter(i => i >= 0);
+    if (idx.length < 2) return "Keep logging. The trend needs about a week of data to show up.";
+    const last = idx[idx.length - 1], now = pts[last].avg;
+    let txt = `7-day average: <b>${num(now, m.isKcal)} ${m.unit}</b> a day`;
+    const back = pts[last - 28];
+    if (back && back.avg) {
+      const pct = Math.round((now - back.avg) / back.avg * 100);
+      txt += Math.abs(pct) < 3 ? ", about the same as 4 weeks ago." : `, ${pct > 0 ? "up" : "down"} ${Math.abs(pct)}% from 4 weeks ago.`;
+    } else txt += ".";
+    return txt;
+  }
+
   // Daily calorie needs: resting energy (70 × kg^0.75) × lifestyle factor
   function kcalNeed(cat) {
     if (!cat.weight) return 0;
@@ -454,8 +557,16 @@
     state.activeId = cat.id;
     dayStartMs = (cat.dayStart || 0) * 36e5;
     const { rows, level } = compute(cat);
-    const range = state.range || 14;
-    const tab = state.chartTab === "kcal" ? "kcal" : "food";
+    const TABS = [["food", "Food"], ["kcal", "Calories"], ["cal", "Calendar"], ["trend", "Trend"]];
+    const tab = TABS.some(t => t[0] === state.chartTab) ? state.chartTab : "food";
+    const RANGES = {
+      bars: { key: "range", def: 14, opts: [[7, "7 days"], [14, "14 days"], [30, "30 days"]] },
+      cal: { key: "calWeeks", def: 26, opts: [[13, "3 mo"], [26, "6 mo"], [52, "1 yr"]] },
+      trend: { key: "trendDays", def: 90, opts: [[30, "1 mo"], [90, "3 mo"], [180, "6 mo"]] }
+    };
+    const rCfg = RANGES[tab === "food" || tab === "kcal" ? "bars" : tab];
+    const rVal = rCfg.opts.some(o => o[0] === state[rCfg.key]) ? state[rCfg.key] : rCfg.def;
+    const range = RANGES.bars.opts.some(o => o[0] === state.range) ? state.range : 14;
     const days = dailyTotals(cat, rows, range);
     const week = dailyTotals(cat, rows, 7);
     const today = week[week.length - 1];
@@ -467,10 +578,34 @@
     const targetKcal = cat.target && kpu ? cat.target * kpu : 0;
     const kcalDays = days.map(d => ({ ...d, given: d.given * kpu, eaten: d.eaten * kpu }));
     const weekKcalAvg = weekEaten / daysWithData * kpu;
+    const measure = kpu
+      ? { conv: kpu, isKcal: true, unit: "kcal", ref: need || targetKcal, refLabel: need ? "estimated need" : "your target" }
+      : { conv: 1, isKcal: false, unit: cat.unit, ref: cat.target, refLabel: "daily target" };
+    if (!measure.ref) measure.refLabel = "a typical day";
     // progress bar: toward calorie need if known, else toward daily target
     const pct = kpu && need ? today.eaten * kpu / need : cat.target ? today.eaten / cat.target : null;
     const progress = pct == null ? "" : `<div class="progress" title="${Math.round(pct * 100)}% of ${kpu && need ? "estimated calorie need" : "daily target"}"><i style="width:${Math.min(100, pct * 100)}%"></i></div>`;
     const capacity = Math.max(level, ...rows.filter(r => r.type === "feed").slice(-10).map(r => r.levelAfter), 1);
+
+    const calendarPanel = () => {
+      const { svg, ref } = calendarSVG(cat, rows, rVal, measure);
+      return `<div class="chart-wrap">${svg}</div>
+        <div class="legend cal-legend">
+          <span>Less</span>${[0.15, 0.35, 0.6, 0.85, 1].map(o => `<i style="background:var(--eaten);opacity:${o}"></i>`).join("")}<span>More</span>
+          <span><i style="background:var(--line)"></i>Nothing logged</span>
+        </div>
+        <p class="panel-note">The strongest color means ${measure.ref ? "at or above" : "about"} ${measure.refLabel} (${num(ref, measure.isKcal)} ${esc(measure.unit)}).</p>`;
+    };
+    const trendPanel = () => {
+      const pts = trendData(cat, rows, rVal, measure);
+      return `<div class="chart-wrap">${trendSVG(pts, measure)}</div>
+        <div class="legend">
+          <span><i style="background:var(--kibble);opacity:.6;border-radius:50%"></i>Each day</span>
+          <span><i style="background:var(--eaten);height:3px;vertical-align:3px"></i>7-day average</span>
+          ${measure.ref ? `<span>${lineKey("var(--bowl)", "2 3")}${measure.refLabel[0].toUpperCase() + measure.refLabel.slice(1)} (${num(measure.ref, measure.isKcal)} ${esc(measure.unit)})</span>` : ""}
+        </div>
+        <p class="panel-note">${trendSummary(pts, measure)}</p>`;
+    };
 
     // history grouped by day, newest first
     const recent = [...rows].reverse().slice(0, 60);
@@ -521,15 +656,14 @@
       <section class="panel">
         <div class="panel-head">
           <div class="tabs" role="tablist" aria-label="Chart">
-            <button role="tab" id="tab-food" data-tab="food" aria-selected="${tab === "food"}" aria-controls="chartPanel" tabindex="${tab === "food" ? 0 : -1}">Daily food</button>
-            <button role="tab" id="tab-kcal" data-tab="kcal" aria-selected="${tab === "kcal"}" aria-controls="chartPanel" tabindex="${tab === "kcal" ? 0 : -1}">Calories</button>
+            ${TABS.map(([id, label]) => `<button role="tab" id="tab-${id}" data-tab="${id}" aria-selected="${tab === id}" aria-controls="chartPanel" tabindex="${tab === id ? 0 : -1}">${label}</button>`).join("")}
           </div>
           <div class="seg" role="group" aria-label="Chart range">
-            ${[7, 14, 30].map(r => `<button data-range="${r}" aria-pressed="${r === range}">${r} days</button>`).join("")}
+            ${rCfg.opts.map(([v, l]) => `<button data-range="${v}" aria-pressed="${v === rVal}">${l}</button>`).join("")}
           </div>
         </div>
         <div id="chartPanel" role="tabpanel" aria-labelledby="tab-${tab}">
-        ${tab === "food" ? `
+        ${tab === "cal" ? calendarPanel() : tab === "trend" ? trendPanel() : tab === "food" ? `
           <div class="chart-wrap">${chartSVG(days, cat.unit, cat.target ? [{ v: cat.target, color: "var(--ink)", dash: "6 4" }] : [], "Food given and eaten per day")}</div>
           <div class="legend">
             <span><i style="background:var(--kibble);opacity:.5"></i>Given</span>
@@ -576,7 +710,8 @@
         tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length].click();
       };
     });
-    app.querySelectorAll("[data-range]").forEach(b => b.onclick = () => { state.range = +b.dataset.range; save(); render(); });
+    app.querySelectorAll("[data-range]").forEach(b => b.onclick = () => { state[rCfg.key] = +b.dataset.range; save(); render(); });
+    if (tab === "cal") { const w = $("#chartPanel .chart-wrap"); if (w) w.scrollLeft = w.scrollWidth; }
     app.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
       if (!confirm("Delete this entry?")) return;
       cat.events = cat.events.filter(e => e.id !== b.dataset.del); save(); render();
