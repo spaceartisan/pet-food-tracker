@@ -226,6 +226,18 @@
         </select>
       </div>
     </label>
+    <label>Day starts at
+      <span class="hint">Pick a time between the last feeding of the night and the first of the morning. A 1 am feeding then counts toward the day before. Changing this recalculates all stats.</span>
+      <select name="dayStart">
+        <option value="0">Midnight</option>
+        <option value="1">1 am</option>
+        <option value="2">2 am</option>
+        <option value="3">3 am</option>
+        <option value="4">4 am</option>
+        <option value="5">5 am</option>
+        <option value="6">6 am</option>
+      </select>
+    </label>
     <label>Lifestyle
       <select name="factor">
         <option value="1.2">Adult, spayed or neutered</option>
@@ -277,6 +289,9 @@
   const unitPlural = u => ({ g: "g", oz: "oz", cups: "cups", pouches: "pouches / cans" }[u] || u);
   const unitFor = (n, unit) => round(n) === 1 ? ({ cups: "cup", pouches: "pouch" }[unit] || unit) : unit;
   const fmt = (n, cat) => `${round(n).toLocaleString()} ${unitFor(n, cat.unit)}`;
+  // Each cat can have its "day" start after midnight (e.g. 3 am) so late-night feedings count toward the evening before.
+  let dayStartMs = 0;
+  const catDay = t => dayKey(t - dayStartMs);
   const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
   const toLocalInput = t => { const d = new Date(t); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const timeStr = t => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -663,6 +678,7 @@
       f.elements.name.value = cat.name; f.elements.unit.value = cat.unit; f.elements.target.value = cat.target || "";
       f.elements.kcal.value = cat.kcal || ""; f.elements.weight.value = cat.weight || "";
       f.elements.weightUnit.value = cat.weightUnit || "lb"; f.elements.factor.value = String(cat.factor || 1.2);
+      f.elements.dayStart.value = String(cat.dayStart || 0);
     }
     updateUnitNames();
     dlg.showModal();
@@ -678,7 +694,8 @@
       kcal: parseFloat(f.elements.kcal.value) || 0,
       weight: parseFloat(f.elements.weight.value) || 0,
       weightUnit: f.elements.weightUnit.value,
-      factor: parseFloat(f.elements.factor.value) || 1.2
+      factor: parseFloat(f.elements.factor.value) || 1.2,
+      dayStart: parseInt(f.elements.dayStart.value, 10) || 0
     };
     if (editingCatId) {
       Object.assign(state.cats.find(c => c.id === editingCatId), fields);
