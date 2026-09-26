@@ -186,6 +186,53 @@
   .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
   .dialog-actions .spacer { flex: 1; }
 
+  /* Vet report / print-to-PDF */
+  .report-range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .report-options { margin: 8px 0 4px; padding: 10px 12px; border: 2px solid var(--line); border-radius: 12px; }
+  .report-options legend { padding: 0 6px; font-weight: 800; }
+  .report-options label.check { margin: 8px 0; }
+  .report-options label.check:has(input:disabled) { opacity: .45; }
+  #printReport { display: none; }
+
+  @media (max-width: 460px) { .report-range { grid-template-columns: 1fr; gap: 0; } }
+
+  @media print {
+    @page { margin: 0.45in; }
+    :root {
+      color-scheme: light !important;
+      --paper: #fff; --card: #fff; --ink: #111; --muted: #555; --line: #cfd4d8;
+      --bowl: #2F6DB5; --kibble: #B98516; --eaten: #39704B; --danger: #8A302C;
+      --treat: #A74468; --piece: #66509D;
+    }
+    body { background: #fff !important; color: #111 !important; font-size: 10pt; }
+    body > main, body > dialog, body > #importFile { display: none !important; }
+    #printReport { display: block !important; max-width: none; margin: 0; padding: 0; }
+    .report-head { border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 12px; }
+    .report-head h1 { font-size: 19pt; margin: 0 0 3px; }
+    .report-head p { margin: 2px 0; color: #444; }
+    .report-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 14px; }
+    .report-stat { border: 1px solid #cfd4d8; border-radius: 7px; padding: 7px 8px; break-inside: avoid; }
+    .report-stat b { display: block; font-size: 12pt; }
+    .report-stat span { color: #555; font-size: 8.5pt; }
+    .report-section { margin-top: 14px; break-inside: auto; }
+    .report-section h2 { font-size: 12pt; margin: 0 0 6px; border-bottom: 1px solid #bbb; padding-bottom: 3px; }
+    .report-note { font-size: 8.5pt; color: #555; margin: 5px 0 0; }
+    .report-chart { break-inside: avoid; }
+    .report-chart svg { width: 100%; max-height: 3.25in; display: block; }
+    .report-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 8.5pt; color: #444; margin-top: 3px; }
+    .report-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border-radius: 2px; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+    .report-table thead { display: table-header-group; }
+    .report-table th, .report-table td { border-bottom: 1px solid #d8dcdf; padding: 4px 5px; text-align: right; vertical-align: top; }
+    .report-table th { background: #f1f3f4 !important; font-weight: 800; color: #222; }
+    .report-table th:first-child, .report-table td:first-child { text-align: left; }
+    .report-table tr { break-inside: avoid; }
+    .report-events .event-day { font-weight: 800; margin-top: 8px; break-after: avoid; }
+    .report-events .event-row { display: grid; grid-template-columns: 72px 1fr; gap: 8px; border-bottom: 1px solid #e2e5e7; padding: 3px 0; break-inside: avoid; }
+    .report-events .event-time { color: #555; }
+    .report-footer { border-top: 1px solid #bbb; margin-top: 16px; padding-top: 6px; color: #555; font-size: 8pt; }
+  }
+
   .welcome { text-align: center; padding: 48px 16px; }
   .welcome p { color: var(--muted); max-width: 40ch; margin: 8px auto 20px; }
 
@@ -265,6 +312,37 @@
     </div>
   </form>
 </dialog>
+
+<!-- Vet PDF report -->
+<dialog id="reportDlg">
+  <form method="dialog" id="reportForm">
+    <h2>Vet PDF report</h2>
+    <p class="panel-note">Build a clean report, then use your browser's Print dialog to save it as a PDF.</p>
+    <div class="report-range">
+      <label>From
+        <input type="date" name="start" required>
+      </label>
+      <label>Through
+        <input type="date" name="end" required>
+      </label>
+    </div>
+    <fieldset class="report-options">
+      <legend>Include</legend>
+      <label class="check"><input type="checkbox" name="need"> Estimated calorie need</label>
+      <label class="check"><input type="checkbox" name="target"> Daily target</label>
+      <label class="check"><input type="checkbox" name="given" checked> Food given / offered</label>
+      <label class="check"><input type="checkbox" name="chart" checked> Daily intake chart</label>
+      <label class="check"><input type="checkbox" name="details" checked> Detailed feeding / weigh-in log</label>
+    </fieldset>
+    <span class="hint">Treats and counted kibble are always included because they contribute to recorded intake.</span>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Print / Save as PDF</button>
+    </div>
+  </form>
+</dialog>
+
+<section id="printReport" aria-hidden="true"></section>
 
 <!-- Cat profile -->
 <dialog id="catDlg">
@@ -512,8 +590,9 @@
   const amt = (v, ax) => `${round(v).toLocaleString()} ${ax.unit}${ax.k ? ` (${Math.round(v * ax.k).toLocaleString()} kcal)` : ""}`;
 
   // days: [{date, given, eaten}] in food units; ax: {unit, k}; lines: [{v, color, dash}] in food units
-  function chartSVG(days, ax, lines = [], label = "Daily chart") {
-    const sc = scale(Math.max(...lines.map(l => l.v), ...days.map(d => Math.max(d.given, d.eaten + d.treatU + d.kibbleU))));
+  function chartSVG(days, ax, lines = [], label = "Daily chart", opts = {}) {
+    const includeGiven = opts.includeGiven !== false;
+    const sc = scale(Math.max(...lines.map(l => l.v), ...days.map(d => Math.max(includeGiven ? d.given : 0, d.eaten + d.treatU + d.kibbleU))));
     const g = geom(sc, ax), { W, H, padL, padR, padT, padB, y } = g;
     const n = days.length, bw = (W - padL - padR) / n;
     let s = `<svg class="fit" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">` + axesSVG(g, sc, ax);
@@ -522,9 +601,9 @@
       const x = padL + i * bw;
       const gw = bw * 0.7, ew = bw * 0.44;
       const gx = x + (bw - gw) / 2, ex = x + (bw - ew) / 2;
-      const tip = `${shortDate(d.date)}: given ${amt(d.given, ax)}, eaten ${amt(d.eaten, ax)}${d.treats ? `, plus ${d.treats} treat${d.treats === 1 ? "" : "s"}${d.treatK ? ` (${Math.round(d.treatK)} kcal)` : ""}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
+      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amt(d.given, ax)}, ` : ""}eaten ${amt(d.eaten, ax)}${d.treats ? `, plus ${d.treats} treat${d.treats === 1 ? "" : "s"}${d.treatK ? ` (${Math.round(d.treatK)} kcal)` : ""}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
       s += `<g><title>${esc(tip)}</title>`;
-      s += `<rect x="${gx}" y="${y(d.given)}" width="${gw}" height="${Math.max(0, y(0) - y(d.given))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
+      if (includeGiven) s += `<rect x="${gx}" y="${y(d.given)}" width="${gw}" height="${Math.max(0, y(0) - y(d.given))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
       s += `<rect x="${ex}" y="${y(d.eaten)}" width="${ew}" height="${Math.max(0, y(0) - y(d.eaten))}" rx="3" fill="var(--eaten)"/>`;
       if (d.treatU > 0) s += `<rect x="${ex}" y="${y(d.eaten + d.treatU)}" width="${ew}" height="${Math.max(0, y(d.eaten) - y(d.eaten + d.treatU))}" rx="2" fill="var(--treat)"/>`;
       if (d.kibbleU > 0) s += `<rect x="${ex}" y="${y(d.eaten + d.treatU + d.kibbleU)}" width="${ew}" height="${Math.max(0, y(d.eaten + d.treatU) - y(d.eaten + d.treatU + d.kibbleU))}" rx="2" fill="var(--piece)"/>`;
@@ -836,6 +915,7 @@
 
       <footer>
         ${backupNote()}
+        <button class="ghost" id="reportBtn">Vet PDF report</button>
         <button class="ghost" id="exportBtn">Download backup</button>
         <button class="ghost" id="importBtn">Restore backup</button>
       </footer>`;
@@ -881,6 +961,7 @@
     $("#kibbleMinus").onclick = () => bumpDailyCount("kibbles", -1);
     $("#feedBtn").onclick = () => openEntryDlg("#feedDlg");
     $("#checkBtn").onclick = () => openEntryDlg("#checkDlg");
+    $("#reportBtn").onclick = openReportDlg;
     $("#exportBtn").onclick = exportData;
     $("#importBtn").onclick = () => $("#importFile").click();
   }
@@ -1062,6 +1143,195 @@
     state.activeId = state.cats[0]?.id || null;
     $("#catDlg").close(); save(); render();
   };
+
+  // ---------- Vet PDF report ----------
+  const keyDate = key => {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0, 0);
+  };
+  const shiftDayKey = (key, delta) => {
+    const d = keyDate(key); d.setDate(d.getDate() + delta); return dayKey(d);
+  };
+  const fullDate = key => keyDate(key).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+
+  function dailyTotalsBetween(cat, rows, startKey, endKey) {
+    const map = {};
+    for (const r of rows) {
+      const k = catDay(r.t);
+      if (k < startKey || k > endKey) continue;
+      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      map[k].events++;
+      if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
+      if (r.eaten != null) map[k].eaten += r.eaten;
+    }
+    const out = [];
+    for (let key = startKey, guard = 0; key <= endKey && guard < 10000; key = shiftDayKey(key, 1), guard++) {
+      const base = map[key] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      const treats = (cat.treats || {})[key] || 0;
+      const kibbles = (cat.kibbles || {})[key] || 0;
+      const treatK = treats * (cat.treatKcal || 0);
+      const kibbleK = kibbles * (cat.kibbleKcal || 0);
+      const treatU = cat.kcal ? treatK / cat.kcal : 0;
+      const kibbleU = cat.kcal ? kibbleK / cat.kcal : 0;
+      const activity = base.events > 0 || treats > 0 || kibbles > 0;
+      out.push({ key, date: keyDate(key), ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity });
+    }
+    return out;
+  }
+
+  function openReportDlg() {
+    const cat = activeCat(), dlg = $("#reportDlg"), f = $("#reportForm");
+    if (!cat) return;
+    f.reset();
+    const end = catDay(Date.now());
+    f.elements.end.value = end;
+    f.elements.start.value = shiftDayKey(end, -29);
+    const need = kcalNeed(cat);
+    f.elements.need.disabled = !need;
+    f.elements.need.checked = !!need;
+    f.elements.target.disabled = !cat.target;
+    f.elements.target.checked = !!cat.target;
+    f.elements.given.checked = true;
+    f.elements.chart.checked = true;
+    f.elements.details.checked = true;
+    dlg.showModal();
+  }
+
+  function reportEventText(r, cat, includeGiven = true) {
+    const parts = [];
+    if (r.type === "feed") {
+      if (includeGiven) parts.push(`Added ${fmt(r.amount, cat)}`);
+      if (r.leftover != null) parts.push(`${fmt(r.leftover, cat)} left before feeding`);
+      if (r.eaten != null) parts.push(`${fmt(r.eaten, cat)} eaten since previous measurement`);
+      if (r.discarded) parts.push(`${fmt(r.discarded, cat)} discarded`);
+    } else {
+      parts.push(`${fmt(r.remaining, cat)} left in bowl`);
+      if (r.eaten != null) parts.push(`${fmt(r.eaten, cat)} eaten since previous measurement`);
+      if (r.emptied) parts.push("leftovers discarded afterwards");
+    }
+    return parts.join(" · ");
+  }
+
+  function buildVetReport(cat, opts) {
+    const { rows } = compute(cat);
+    const days = dailyTotalsBetween(cat, rows, opts.start, opts.end);
+    const logged = days.filter(d => d.activity);
+    const n = logged.length;
+    const foodDays = days.filter(d => d.events > 0);
+    const kpu = cat.kcal || 0;
+    const need = kcalNeed(cat);
+    const totalFood = foodDays.reduce((a, d) => a + d.eaten, 0);
+    const totalTreats = logged.reduce((a, d) => a + d.treats, 0);
+    const totalKibbles = logged.reduce((a, d) => a + d.kibbles, 0);
+    const totalKcal = logged.reduce((a, d) => a + d.eaten * kpu + d.treatK + d.kibbleK, 0);
+    const avgFood = foodDays.length ? totalFood / foodDays.length : 0;
+    const avgKcal = n && (kpu || cat.treatKcal || cat.kibbleKcal) ? totalKcal / n : 0;
+    const hasKcal = !!(kpu || cat.treatKcal || cat.kibbleKcal);
+    const weight = cat.weight ? `${round(cat.weight).toLocaleString()} ${cat.weightUnit || "lb"}` : "Not entered";
+    const lines = [];
+    if (opts.target && cat.target) lines.push({ v: cat.target, color: "var(--bowl)", dash: "6 4" });
+    if (opts.need && need && kpu) lines.push({ v: need / kpu, color: "var(--danger)", dash: "2 3" });
+    const ax = { unit: unitPlural(cat.unit), k: kpu };
+    const generated = new Date().toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+    const stats = [
+      `<div class="report-stat"><b>${n}</b><span>days with logged data</span></div>`,
+      `<div class="report-stat"><b>${foodDays.length ? fmt(avgFood, cat) : "—"}</b><span>average measured food eaten / day with bowl data</span></div>`,
+      hasKcal ? `<div class="report-stat"><b>${Math.round(avgKcal).toLocaleString()} kcal</b><span>average intake / logged day</span></div>` : "",
+      `<div class="report-stat"><b>${esc(weight)}</b><span>recorded body weight</span></div>`,
+      opts.need && need ? `<div class="report-stat"><b>~${Math.round(need).toLocaleString()} kcal</b><span>estimated daily need</span></div>` : "",
+      opts.target && cat.target ? `<div class="report-stat"><b>${fmt(cat.target, cat)}${kpu ? ` · ${Math.round(cat.target * kpu).toLocaleString()} kcal` : ""}</b><span>daily target</span></div>` : "",
+      totalTreats ? `<div class="report-stat"><b>${totalTreats.toLocaleString()}</b><span>treats in report period</span></div>` : "",
+      totalKibbles ? `<div class="report-stat"><b>${totalKibbles.toLocaleString()}</b><span>counted kibble pieces in report period</span></div>` : ""
+    ].filter(Boolean).join("");
+
+    let chart = "";
+    if (opts.chart && days.length) {
+      chart = `<section class="report-section report-chart"><h2>Daily intake</h2>${chartSVG(days, ax, lines, "Daily intake report", { includeGiven: opts.given })}
+        <div class="report-legend">
+          ${opts.given ? `<span><i style="background:var(--kibble);opacity:.35"></i>Food given / offered</span>` : ""}
+          <span><i style="background:var(--eaten)"></i>Measured food eaten</span>
+          ${days.some(d => d.treats) ? `<span><i style="background:var(--treat)"></i>Treats</span>` : ""}
+          ${days.some(d => d.kibbles) ? `<span><i style="background:var(--piece)"></i>Counted kibble</span>` : ""}
+          ${opts.target && cat.target ? `<span>${lineKey("var(--bowl)", "6 4")}Daily target</span>` : ""}
+          ${opts.need && need && kpu ? `<span>${lineKey("var(--danger)", "2 3")}Estimated need</span>` : ""}
+        </div></section>`;
+    }
+
+    const kcalCol = hasKcal ? `<th>Total kcal</th>` : "";
+    const givenCol = opts.given ? `<th>Given / offered</th>` : "";
+    const tableRows = days.map(d => {
+      const dayKcal = d.eaten * kpu + d.treatK + d.kibbleK;
+      return `<tr>
+        <td>${esc(d.date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }))}</td>
+        <td>${d.events ? esc(fmt(d.eaten, cat)) : "—"}</td>
+        ${givenCol ? `<td>${d.events ? esc(fmt(d.given, cat)) : "—"}</td>` : ""}
+        <td>${d.treats || "—"}</td>
+        <td>${d.kibbles || "—"}</td>
+        ${hasKcal ? `<td>${d.activity ? Math.round(dayKcal).toLocaleString() : "—"}</td>` : ""}
+      </tr>`;
+    }).join("");
+
+    let details = "";
+    if (opts.details) {
+      const inRange = rows.filter(r => { const k = catDay(r.t); return k >= opts.start && k <= opts.end; });
+      const byDay = new Map();
+      for (const r of inRange) {
+        const k = catDay(r.t); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(r);
+      }
+      details = `<section class="report-section report-events"><h2>Feeding and weigh-in log</h2>` +
+        ([...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, items]) =>
+          `<div class="event-day">${esc(fullDate(k))}</div>${items.map(r => {
+            const txt = reportEventText(r, cat, opts.given) || (r.type === "feed" ? "Feeding recorded" : "Bowl check recorded");
+            return `<div class="event-row"><span class="event-time">${esc(timeStr(r.t))}</span><span>${esc(txt)}</span></div>`;
+          }).join("")}`
+        ).join("") || `<p class="report-note">No feeding or weigh-in events in this period.</p>`) + `</section>`;
+    }
+
+    const targetNote = opts.target && cat.target ? `<span>Daily target: ${esc(fmt(cat.target, cat))}${kpu ? ` (${Math.round(cat.target * kpu).toLocaleString()} kcal)` : ""}.</span> ` : "";
+    const needNote = opts.need && need ? `<span>Estimated need: ~${Math.round(need).toLocaleString()} kcal/day, calculated from the weight and lifestyle setting in the app.</span>` : "";
+
+    return `<div class="report-head">
+        <h1>${esc(cat.name)} — food intake report</h1>
+        <p>${esc(fullDate(opts.start))} through ${esc(fullDate(opts.end))} · generated ${esc(generated)}</p>
+        <p>Recorded weight: ${esc(weight)}${cat.kcal ? ` · Food energy: ${round(cat.kcal).toLocaleString()} kcal per ${esc(unitSingular(cat.unit))}` : ""}</p>
+      </div>
+      <div class="report-summary">${stats}</div>
+      ${chart}
+      <section class="report-section"><h2>Daily log</h2>
+        <table class="report-table"><thead><tr><th>Date</th><th>Food eaten</th>${givenCol}<th>Treats</th><th>Kibble pieces</th>${kcalCol}</tr></thead><tbody>${tableRows}</tbody></table>
+        <p class="report-note">“Food eaten” is calculated from bowl measurements. Treats and counted kibble are logged separately and, when per-item calories are configured, are included in Total kcal. Blank days indicate no logged activity.</p>
+      </section>
+      ${details}
+      <div class="report-footer">${targetNote}${needNote}${opts.need && need ? ` This estimate is informational and is not a veterinary prescription.` : ""}</div>`;
+  }
+
+  $("#reportForm").addEventListener("submit", e => {
+    const f = e.target, cat = activeCat();
+    const start = f.elements.start.value, end = f.elements.end.value;
+    if (!start || !end || start > end) {
+      e.preventDefault();
+      alert("Choose a valid report date range.");
+      return;
+    }
+    const opts = {
+      start, end,
+      need: f.elements.need.checked,
+      target: f.elements.target.checked,
+      given: f.elements.given.checked,
+      chart: f.elements.chart.checked,
+      details: f.elements.details.checked
+    };
+    const report = $("#printReport");
+    report.innerHTML = buildVetReport(cat, opts);
+    report.setAttribute("aria-hidden", "false");
+    // Let the dialog close and the report finish layout before opening the system print dialog.
+    setTimeout(() => window.print(), 60);
+  });
+  window.addEventListener("afterprint", () => {
+    const report = $("#printReport");
+    report.setAttribute("aria-hidden", "true");
+  });
 
   // ---------- Backup ----------
   // Data only lives in this browser, so nudge toward a backup every 30 days.
