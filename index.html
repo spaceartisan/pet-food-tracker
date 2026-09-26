@@ -157,6 +157,31 @@
   .entry button:hover { color: var(--ink); }
   .entry button[data-del]:hover { color: var(--danger); }
   .empty { color: var(--muted); padding: 8px 0; }
+  .appetite-entry .dot { background: var(--bowl); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bowl) 22%, transparent); }
+  .appetite-badge, .low-badge {
+    display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 7px;
+    font-size: .75rem; font-weight: 800; line-height: 1.35;
+  }
+  .appetite-badge { color: var(--bowl); background: color-mix(in srgb, var(--bowl) 12%, transparent); }
+  .low-badge { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+  .day-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .day-title h3 { margin: 0; }
+  .analytics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .analytics-card { border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-width: 0; }
+  .analytics-card.low { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); background: color-mix(in srgb, var(--danger) 5%, var(--card)); }
+  .analytics-card b { display: block; font-size: 1.15rem; font-weight: 900; }
+  .analytics-card span, .analytics-card small { display: block; color: var(--muted); }
+  .analytics-card span { font-size: .84rem; font-weight: 700; }
+  .analytics-card small { font-size: .76rem; margin-top: 3px; }
+  .baseline-summary { margin-top: 10px; padding: 9px 11px; border-radius: 10px; background: var(--paper); color: var(--muted); font-size: .88rem; }
+  .baseline-summary b { color: var(--ink); }
+  .baseline-summary.low { border-left: 4px solid var(--danger); }
+  textarea { resize: vertical; min-height: 84px; }
+  .baseline-range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 560px) {
+    .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .baseline-range { grid-template-columns: 1fr; }
+  }
 
   footer { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: 0.9rem; }
   .footer-note { flex-basis: 100%; text-align: center; margin: 0; }
@@ -178,7 +203,7 @@
   dialog::backdrop { background: rgba(10, 15, 20, 0.45); }
   label { display: block; font-weight: 700; margin-bottom: 12px; }
   label.check { display: flex; gap: 8px; align-items: center; font-weight: 600; }
-  input[type=number], input[type=text], input[type=date], input[type=datetime-local], select {
+  input[type=number], input[type=text], input[type=date], input[type=datetime-local], select, textarea {
     display: block; width: 100%; margin-top: 4px; padding: 10px 12px;
     border: 2px solid var(--line); border-radius: 10px; background: var(--paper);
   }
@@ -313,6 +338,62 @@
   </form>
 </dialog>
 
+<!-- Appetite note / rating -->
+<dialog id="appetiteDlg">
+  <form method="dialog" id="appetiteForm">
+    <h2>Edit appetite</h2>
+    <label>Day
+      <span class="hint">Choose the feeding day this observation belongs to.</span>
+      <input type="date" name="date" required>
+    </label>
+    <label>Appetite
+      <select name="rating">
+        <option value="">Not rated</option>
+        <option value="normal">Normal</option>
+        <option value="reduced">Reduced</option>
+        <option value="poor">Poor</option>
+        <option value="refused">Refused food</option>
+        <option value="increased">Increased</option>
+      </select>
+    </label>
+    <label>Note
+      <span class="hint">Optional feeding/appetite context, e.g. “needed encouragement” or “ate immediately.”</span>
+      <textarea name="note" maxlength="500" placeholder="Optional"></textarea>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Save appetite</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Appetite baseline -->
+<dialog id="baselineDlg">
+  <form method="dialog" id="baselineForm">
+    <h2>Appetite baseline</h2>
+    <p class="panel-note">Leave the dates blank to use the most recent 30 completed logged days. Set both dates to lock the comparison to a specific period when your cat was eating normally.</p>
+    <div class="baseline-range">
+      <label>Baseline from
+        <input type="date" name="start">
+      </label>
+      <label>Through
+        <input type="date" name="end">
+      </label>
+    </div>
+    <label>Flag a low-intake day below
+      <div class="row">
+        <input type="number" name="threshold" min="10" max="100" step="1" inputmode="numeric" required>
+        <span style="align-self:center;font-weight:800">%</span>
+      </div>
+      <span class="hint">Compared with the baseline. Default is 75%.</span>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Save baseline</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- Vet PDF report -->
 <dialog id="reportDlg">
   <form method="dialog" id="reportForm">
@@ -333,6 +414,7 @@
       <label class="check"><input type="checkbox" name="given" checked> Food given / offered</label>
       <label class="check"><input type="checkbox" name="chart" checked> Daily intake chart</label>
       <label class="check"><input type="checkbox" name="daily" checked> Daily log</label>
+      <label class="check"><input type="checkbox" name="appetite" checked> Appetite notes / ratings</label>
       <label class="check"><input type="checkbox" name="details" checked> Detailed feeding / weigh-in log</label>
     </fieldset>
     <span class="hint">Treats and counted kibble are always included because they contribute to recorded intake.</span>
@@ -479,6 +561,9 @@
     const [y, m, d] = key.split("-").map(Number);
     return new Date(y, m - 1, d).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
   }
+  const appetiteLabels = { normal: "Normal", reduced: "Reduced", poor: "Poor", refused: "Refused food", increased: "Increased" };
+  const appetiteLabel = value => appetiteLabels[value] || "";
+  const dayIntake = d => d.eaten + d.treatU + d.kibbleU;
 
   // ---------- Core calculation ----------
   // Walks events in time order, tracking the estimated amount in the bowl.
@@ -510,16 +595,16 @@
     const map = {};
     for (const r of rows) {
       const k = catDay(r.t);
-      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
       map[k].events++;
       if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
-      if (r.eaten != null) map[k].eaten += r.eaten;
+      if (r.eaten != null) { map[k].eaten += r.eaten; map[k].measurements++; }
     }
     const out = [];
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(Date.now() - dayStartMs); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
       const k = dayKey(d);
-      const base = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      const base = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
       const treats = (cat.treats || {})[k] || 0;
       const kibbles = (cat.kibbles || {})[k] || 0;
       const treatK = treats * (cat.treatKcal || 0);
@@ -527,12 +612,49 @@
       // Extra calories expressed in food units so they can stack on food charts.
       const treatU = cat.kcal ? treatK / cat.kcal : 0;
       const kibbleU = cat.kcal ? kibbleK / cat.kcal : 0;
-      // Count an extras-only day as activity when its calories are known.
-      const activity = base.events > 0 || treatU > 0 || kibbleU > 0;
-      out.push({ key: k, date: d, ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity });
+      // Activity records that something was logged; intakeKnown is stricter for appetite analytics.
+      const activity = base.events > 0 || treats > 0 || kibbles > 0;
+      const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
+      out.push({ key: k, date: d, ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity, intakeKnown });
     }
     return out;
   }
+
+  function appetiteBaseline(cat, rows) {
+    const today = catDay(Date.now());
+    const threshold = Number(cat.lowThreshold) > 0 ? Number(cat.lowThreshold) : 0.75;
+    let days = [], custom = false;
+    if (cat.baselineStart && cat.baselineEnd && cat.baselineStart <= cat.baselineEnd) {
+      const end = cat.baselineEnd >= today ? shiftDayKey(today, -1) : cat.baselineEnd;
+      if (cat.baselineStart <= end) {
+        days = dailyTotalsBetween(cat, rows, cat.baselineStart, end);
+        custom = true;
+      }
+    }
+    if (!days.length) {
+      days = dailyTotals(cat, rows, 366).slice(0, -1).filter(d => d.intakeKnown && dayIntake(d) > 0).slice(-30);
+    }
+    const logged = days.filter(d => d.intakeKnown && dayIntake(d) > 0);
+    if (!logged.length) return { value: 0, n: 0, threshold, custom, start: "", end: "" };
+    const vals = logged.map(dayIntake).sort((a, b) => a - b);
+    const mid = Math.floor(vals.length / 2);
+    const value = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    return {
+      value, n: logged.length, threshold, custom,
+      start: logged[0].key, end: logged[logged.length - 1].key
+    };
+  }
+
+  function rollingAppetite(cat, rows, windowDays) {
+    const days = dailyTotals(cat, rows, windowDays + 1).slice(0, -1);
+    const logged = days.filter(d => d.intakeKnown);
+    if (!logged.length) return { avg: 0, n: 0 };
+    return { avg: logged.reduce((a, d) => a + dayIntake(d), 0) / logged.length, n: logged.length };
+  }
+
+  const intakeDisplay = (v, cat) => cat.kcal
+    ? `${Math.round(v * cat.kcal).toLocaleString()} kcal`
+    : fmt(v, cat);
 
   // ---------- Rendering ----------
   function bowlSVG(level, capacity) {
@@ -608,6 +730,10 @@
       s += `<rect x="${ex}" y="${y(d.eaten)}" width="${ew}" height="${Math.max(0, y(0) - y(d.eaten))}" rx="3" fill="var(--eaten)"/>`;
       if (d.treatU > 0) s += `<rect x="${ex}" y="${y(d.eaten + d.treatU)}" width="${ew}" height="${Math.max(0, y(d.eaten) - y(d.eaten + d.treatU))}" rx="2" fill="var(--treat)"/>`;
       if (d.kibbleU > 0) s += `<rect x="${ex}" y="${y(d.eaten + d.treatU + d.kibbleU)}" width="${ew}" height="${Math.max(0, y(d.eaten + d.treatU) - y(d.eaten + d.treatU + d.kibbleU))}" rx="2" fill="var(--piece)"/>`;
+      const total = dayIntake(d);
+      if (opts.baseline && d.intakeKnown && d.key !== catDay(Date.now()) && total < opts.baseline * (opts.lowThreshold || 0.75)) {
+        s += `<rect x="${ex - 2}" y="${y(total) - 2}" width="${ew + 4}" height="${Math.max(4, y(0) - y(total) + 4)}" rx="4" fill="none" stroke="var(--danger)" stroke-width="2"/>`;
+      }
       s += `<rect x="${x}" y="${padT}" width="${bw}" height="${H - padT - padB}" fill="transparent"/></g>`;
       if ((n - 1 - i) % labelEvery === 0) {
         const lbl = n <= 7 ? d.date.toLocaleDateString([], { weekday: "short" }) : `${d.date.getMonth() + 1}/${d.date.getDate()}`;
@@ -653,7 +779,6 @@
     return { svg: s + "</svg>", ref };
   }
 
-  // 7-day rolling average of eating, through yesterday (today isn't finished yet).
   // 7-day rolling average of eating, through yesterday (today isn't finished yet).
   function trendData(cat, rows, span) {
     const all = dailyTotals(cat, rows, span + 7).slice(0, -1);
@@ -758,6 +883,8 @@
     const activeWeek = week.filter(d => d.activity);
     const weekKcalAvg = (weekEaten * kpu + activeWeek.reduce((a, d) => a + d.treatK + d.kibbleK, 0)) / daysWithData;
     const todayKcal = today.eaten * kpu + today.treatK + today.kibbleK;
+    const baseline = appetiteBaseline(cat, rows);
+    const rolling = Object.fromEntries([3, 7, 14, 30].map(n => [n, rollingAppetite(cat, rows, n)]));
     const measure = kpu
       ? { conv: kpu, isKcal: true, unit: "kcal", ref: need || targetKcal, refLabel: need ? "estimated need" : "your target" }
       : { conv: 1, isKcal: false, unit: cat.unit, ref: cat.target, refLabel: "daily target" };
@@ -779,12 +906,13 @@
       ? `<p class="panel-note">Add calories per ${esc(unitSingular(cat.unit))} in “Edit ${esc(cat.name)}” to show calories on the right-hand axis.</p>`
       : !need ? `<p class="panel-note">Add ${esc(cat.name)}'s weight in “Edit ${esc(cat.name)}” to see their estimated daily need.</p>` : "";
     const dailyPanel = () => `
-        <div class="chart-wrap">${chartSVG(days, ax, refs, "Food given and eaten per day")}</div>
+        <div class="chart-wrap">${chartSVG(days, ax, refs, "Food given and eaten per day", { baseline: baseline.value, lowThreshold: baseline.threshold })}</div>
         <div class="legend">
           <span><i style="background:var(--kibble);opacity:.5"></i>Given</span>
           <span><i style="background:var(--eaten)"></i>Eaten</span>
           ${days.some(d => d.treatU > 0) ? `<span><i style="background:var(--treat)"></i>Treats</span>` : ""}
           ${days.some(d => d.kibbleU > 0) ? `<span><i style="background:var(--piece)"></i>Counted kibble</span>` : ""}
+          ${baseline.value && days.some(d => d.intakeKnown && d.key !== catDay(Date.now()) && dayIntake(d) < baseline.value * baseline.threshold) ? `<span>${lineKey("var(--danger)", "6 4")}Below ${Math.round(baseline.threshold * 100)}% baseline</span>` : ""}
           ${refLegend()}
         </div>${calorieNote}`;
 
@@ -819,7 +947,25 @@
     for (const r of recent) ensureGroup(catDay(r.t)).items.push(r);
     for (const k of Object.keys(cat.treats || {})) if ((cat.treats[k] || 0) > 0) ensureGroup(k);
     for (const k of Object.keys(cat.kibbles || {})) if ((cat.kibbles[k] || 0) > 0) ensureGroup(k);
+    for (const [k, a] of Object.entries(cat.appetite || {})) if (a && (a.rating || a.note)) ensureGroup(k);
     const groups = [...groupMap.values()].sort((a, b) => b.key.localeCompare(a.key)).slice(0, 60);
+    const historyDays = groups.length ? dailyTotalsBetween(cat, rows, groups[groups.length - 1].key, groups[0].key) : [];
+    const historyDayMap = new Map(historyDays.map(d => [d.key, d]));
+
+    const analyticsCards = [3, 7, 14, 30].map(n => {
+      const r = rolling[n], ratio = baseline.value && r.n ? r.avg / baseline.value : 0;
+      const low = baseline.value && r.n && ratio < baseline.threshold;
+      return `<div class="analytics-card${low ? " low" : ""}">
+        <b>${r.n ? esc(intakeDisplay(r.avg, cat)) : "—"}</b>
+        <span>${n}-day average</span>
+        <small>${r.n ? `${r.n} logged day${r.n === 1 ? "" : "s"}${baseline.value ? ` · ${Math.round(ratio * 100)}% of baseline` : ""}` : "No completed intake data"}</small>
+      </div>`;
+    }).join("");
+    const recent14 = dailyTotals(cat, rows, 15).slice(0, -1).filter(d => d.intakeKnown);
+    const low14 = baseline.value ? recent14.filter(d => dayIntake(d) < baseline.value * baseline.threshold).length : 0;
+    const baselineText = baseline.value
+      ? `${baseline.custom ? "Custom" : "Automatic"} baseline: <b>${esc(intakeDisplay(baseline.value, cat))}</b> median from ${baseline.n} logged day${baseline.n === 1 ? "" : "s"} (${esc(dayLabel(baseline.start))}–${esc(dayLabel(baseline.end))}). Low intake is below <b>${Math.round(baseline.threshold * 100)}%</b> of baseline.${recent14.length ? ` ${low14} of the last ${recent14.length} completed logged day${recent14.length === 1 ? "" : "s"} ${low14 === 1 ? "was" : "were"} below that threshold.` : ""}`
+      : `A personal baseline will appear after completed intake is logged. By default the app uses the median of the most recent 30 completed logged days.`;
 
     app.innerHTML = `
       <header>
@@ -874,6 +1020,16 @@
 
       <section class="panel">
         <div class="panel-head">
+          <h2 style="margin:0">Appetite trends</h2>
+          <button class="ghost" id="baselineSettings">Baseline settings</button>
+        </div>
+        <div class="analytics-grid">${analyticsCards}</div>
+        <div class="baseline-summary${low14 ? " low" : ""}">${baselineText}</div>
+        <p class="panel-note">Averages use completed days with measurable intake only; an unlogged or unmeasured day is not treated as zero. Treats and counted kibble are included when calories per food unit are configured.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
           <div class="tabs" role="tablist" aria-label="Chart">
             ${TABS.map(([id, label]) => `<button role="tab" id="tab-${id}" data-tab="${id}" aria-selected="${tab === id}" aria-controls="chartPanel" tabindex="${tab === id ? 0 : -1}">${label}</button>`).join("")}
           </div>
@@ -893,25 +1049,32 @@
             <button class="ghost" id="historyAddFeed">+ Add food</button>
             <button class="ghost" id="historyAddCheck">+ Add leftovers</button>
             <button class="ghost" id="editDailyCounts">+ Add/edit treats &amp; kibble</button>
+            <button class="ghost" id="editAppetite">+ Add/edit appetite</button>
           </div>
         </div>
         ${groups.length ? groups.map(g => {
           const treats = (cat.treats || {})[g.key] || 0;
           const kibbles = (cat.kibbles || {})[g.key] || 0;
+          const appetite = (cat.appetite || {})[g.key] || null;
           const extras = treats || kibbles ? extrasHTML(g.key, treats, kibbles, cat) : "";
+          const appetiteEntry = appetite && (appetite.rating || appetite.note) ? appetiteHTML(g.key, appetite) : "";
+          const hd = historyDayMap.get(g.key);
+          const low = !!(baseline.value && hd && hd.intakeKnown && g.key !== catDay(Date.now()) && dayIntake(hd) < baseline.value * baseline.threshold);
+          const pctBase = low ? Math.round(dayIntake(hd) / baseline.value * 100) : 0;
           return `
           <div class="day">
             <div class="day-head">
-              <h3>${dayLabel(g.key)}</h3>
+              <div class="day-title"><h3>${dayLabel(g.key)}</h3>${low ? `<span class="low-badge">Low intake · ${pctBase}% baseline</span>` : ""}${appetite?.rating ? `<span class="appetite-badge">${esc(appetiteLabel(appetite.rating))}</span>` : ""}</div>
               <div class="day-actions">
                 <button class="day-edit" data-add-feed="${g.key}">+ Food</button>
                 <button class="day-edit" data-add-check="${g.key}">+ Leftovers</button>
                 <button class="day-edit" data-edit-extras="${g.key}">Edit treats &amp; kibble</button>
+                <button class="day-edit" data-edit-appetite="${g.key}">Edit appetite</button>
               </div>
             </div>
-            ${extras}${g.items.map(r => entryHTML(r, cat)).join("")}
+            ${appetiteEntry}${extras}${g.items.map(r => entryHTML(r, cat)).join("")}
           </div>`;
-        }).join("") : `<div class="empty">Nothing logged yet. Add food or daily treats/kibble to begin.</div>`}
+        }).join("") : `<div class="empty">Nothing logged yet. Add food, daily counts, or an appetite note to begin.</div>`}
       </section>
 
       <footer>
@@ -942,11 +1105,14 @@
       if (ev) openEntryDlg(ev.type === "feed" ? "#feedDlg" : "#checkDlg", ev);
     });
     app.querySelectorAll("[data-edit-extras]").forEach(b => b.onclick = () => openExtrasDlg(b.dataset.editExtras));
+    app.querySelectorAll("[data-edit-appetite]").forEach(b => b.onclick = () => openAppetiteDlg(b.dataset.editAppetite));
     app.querySelectorAll("[data-add-feed]").forEach(b => b.onclick = () => openEntryDlg("#feedDlg", null, b.dataset.addFeed));
     app.querySelectorAll("[data-add-check]").forEach(b => b.onclick = () => openEntryDlg("#checkDlg", null, b.dataset.addCheck));
     $("#historyAddFeed").onclick = () => openEntryDlg("#feedDlg");
     $("#historyAddCheck").onclick = () => openEntryDlg("#checkDlg");
     $("#editDailyCounts").onclick = () => openExtrasDlg(catDay(Date.now()));
+    $("#editAppetite").onclick = () => openAppetiteDlg(catDay(Date.now()));
+    $("#baselineSettings").onclick = openBaselineDlg;
     $("#addCat").onclick = () => openCatDlg(null);
     $("#editCat").onclick = () => openCatDlg(cat);
     const bumpDailyCount = (field, delta) => {
@@ -1000,6 +1166,16 @@
     </div>`;
   }
 
+  function appetiteHTML(key, item) {
+    const rating = appetiteLabel(item.rating);
+    const title = rating ? `Appetite: ${rating}` : "Appetite note";
+    return `<div class="entry appetite-entry">
+      <span class="dot"></span>
+      <div class="txt">${esc(title)}${item.note ? `<small>${esc(item.note)}</small>` : ""}</div>
+      <button data-edit-appetite="${key}" aria-label="Edit appetite for ${esc(dayLabel(key))}">Edit</button>
+    </div>`;
+  }
+
   // ---------- Dialogs ----------
   document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest("dialog").close());
 
@@ -1027,6 +1203,55 @@
     cat.kibbles = cat.kibbles || {};
     if (treats) cat.treats[k] = treats; else delete cat.treats[k];
     if (kibbles) cat.kibbles[k] = kibbles; else delete cat.kibbles[k];
+    save(); render();
+  });
+
+  function openAppetiteDlg(key) {
+    const dlg = $("#appetiteDlg"), f = $("#appetiteForm"), cat = activeCat();
+    f.reset();
+    f.elements.date.value = key || catDay(Date.now());
+    const load = () => {
+      const item = (cat.appetite || {})[f.elements.date.value] || {};
+      f.elements.rating.value = item.rating || "";
+      f.elements.note.value = item.note || "";
+    };
+    load();
+    f.elements.date.onchange = load;
+    dlg.showModal();
+  }
+
+  $("#appetiteForm").addEventListener("submit", e => {
+    const f = e.target, cat = activeCat(), key = f.elements.date.value;
+    if (!key) { e.preventDefault(); return; }
+    const rating = f.elements.rating.value;
+    const note = f.elements.note.value.trim();
+    cat.appetite = cat.appetite || {};
+    if (rating || note) cat.appetite[key] = { rating, note };
+    else delete cat.appetite[key];
+    save(); render();
+  });
+
+  function openBaselineDlg() {
+    const dlg = $("#baselineDlg"), f = $("#baselineForm"), cat = activeCat();
+    f.reset();
+    f.elements.start.value = cat.baselineStart || "";
+    f.elements.end.value = cat.baselineEnd || "";
+    f.elements.threshold.value = Math.round((Number(cat.lowThreshold) > 0 ? Number(cat.lowThreshold) : 0.75) * 100);
+    dlg.showModal();
+  }
+
+  $("#baselineForm").addEventListener("submit", e => {
+    const f = e.target, cat = activeCat();
+    const start = f.elements.start.value, end = f.elements.end.value;
+    if ((start && !end) || (!start && end) || (start && end && start > end)) {
+      e.preventDefault();
+      alert("Set both baseline dates, with the From date on or before the Through date, or leave both blank for the automatic baseline.");
+      return;
+    }
+    const pct = Math.max(10, Math.min(100, Number(f.elements.threshold.value) || 75));
+    cat.baselineStart = start;
+    cat.baselineEnd = end;
+    cat.lowThreshold = pct / 100;
     save(); render();
   });
 
@@ -1160,14 +1385,14 @@
     for (const r of rows) {
       const k = catDay(r.t);
       if (k < startKey || k > endKey) continue;
-      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
       map[k].events++;
       if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
-      if (r.eaten != null) map[k].eaten += r.eaten;
+      if (r.eaten != null) { map[k].eaten += r.eaten; map[k].measurements++; }
     }
     const out = [];
     for (let key = startKey, guard = 0; key <= endKey && guard < 10000; key = shiftDayKey(key, 1), guard++) {
-      const base = map[key] || { given: 0, eaten: 0, feeds: 0, events: 0 };
+      const base = map[key] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
       const treats = (cat.treats || {})[key] || 0;
       const kibbles = (cat.kibbles || {})[key] || 0;
       const treatK = treats * (cat.treatKcal || 0);
@@ -1175,7 +1400,8 @@
       const treatU = cat.kcal ? treatK / cat.kcal : 0;
       const kibbleU = cat.kcal ? kibbleK / cat.kcal : 0;
       const activity = base.events > 0 || treats > 0 || kibbles > 0;
-      out.push({ key, date: keyDate(key), ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity });
+      const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
+      out.push({ key, date: keyDate(key), ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity, intakeKnown });
     }
     return out;
   }
@@ -1195,6 +1421,7 @@
     f.elements.given.checked = true;
     f.elements.chart.checked = true;
     f.elements.daily.checked = true;
+    f.elements.appetite.checked = true;
     f.elements.details.checked = true;
     dlg.showModal();
   }
@@ -1278,6 +1505,15 @@
         <p class="report-note">“Food eaten” is calculated from bowl measurements. Treats and counted kibble are logged separately and, when per-item calories are configured, are included in Total kcal. Blank days indicate no logged activity.</p>
       </section>` : "";
 
+    const appetiteRows = opts.appetite ? days.map(d => {
+      const a = (cat.appetite || {})[d.key];
+      if (!a || (!a.rating && !a.note)) return "";
+      return `<tr><td>${esc(fullDate(d.key))}</td><td>${esc(appetiteLabel(a.rating) || "—")}</td><td style="text-align:left">${a.note ? esc(a.note) : "—"}</td></tr>`;
+    }).filter(Boolean).join("") : "";
+    const appetiteSection = appetiteRows ? `<section class="report-section"><h2>Appetite notes</h2>
+      <table class="report-table"><thead><tr><th>Date</th><th>Appetite</th><th style="text-align:left">Note</th></tr></thead><tbody>${appetiteRows}</tbody></table>
+      </section>` : "";
+
     let details = "";
     if (opts.details) {
       const inRange = rows.filter(r => { const k = catDay(r.t); return k >= opts.start && k <= opts.end; });
@@ -1305,6 +1541,7 @@
       <div class="report-summary">${stats}</div>
       ${chart}
       ${dailyLog}
+      ${appetiteSection}
       ${details}
       <div class="report-footer">${targetNote}${needNote}${opts.need && need ? ` This estimate is informational and is not a veterinary prescription.` : ""}</div>`;
   }
@@ -1324,6 +1561,7 @@
       given: f.elements.given.checked,
       chart: f.elements.chart.checked,
       daily: f.elements.daily.checked,
+      appetite: f.elements.appetite.checked,
       details: f.elements.details.checked
     };
     const report = $("#printReport");
@@ -1340,7 +1578,7 @@
   // ---------- Backup ----------
   // Data only lives in this browser, so nudge toward a backup every 30 days.
   function backupNote() {
-    if (!state.cats.some(c => c.events.length)) return "";
+    if (!state.cats.some(c => c.events.length || Object.keys(c.treats || {}).length || Object.keys(c.kibbles || {}).length || Object.keys(c.appetite || {}).length)) return "";
     const last = state.lastBackup;
     if (!last || Date.now() - last > 30 * 864e5) {
       return `<p class="backup-warn"><b>Last backup: ${last ? ago(last) : "never"}.</b> Your log is only saved in this browser, so download a backup now and then.</p>`;
