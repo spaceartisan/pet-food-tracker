@@ -1,6 +1,6 @@
 // Network first, so updates to index.html show up right away;
 // falls back to the saved copy when offline.
-const CACHE = "foodbowl-v4";
+const CACHE = "foodbowl-v6";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png"];
 
 self.addEventListener("install", e => {

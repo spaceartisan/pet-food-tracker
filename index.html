@@ -17,6 +17,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
+    color-scheme: light;
     --paper: #F3F5F1;
     --card: #FFFFFF;
     --ink: #1F2A33;
@@ -34,6 +35,7 @@
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --paper: #151B20; --card: #1E262D; --ink: #E8ECEF; --muted: #97A3AD;
       --line: #2F3942; --bowl: #6FA3E0; --kibble: #E8B64A; --eaten: #74B488; --danger: #E0736B; --treat: #E58BAA; --piece: #A995DE;
     }
@@ -132,12 +134,19 @@
 
   /* History */
   .day { margin-top: 12px; }
-  .day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
   .day h3 { font-size: 0.9rem; font-weight: 800; color: var(--muted); margin: 0; }
+  .day-actions, .history-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
   .day-edit { border: none; background: none; color: var(--muted); padding: 4px 8px; border-radius: 6px; font-weight: 700; }
   .day-edit:hover { color: var(--ink); }
   .history-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .history-title h2 { margin: 0; }
+  @media (max-width: 560px) {
+    .history-title { align-items: flex-start; }
+    .history-actions { width: 100%; justify-content: flex-start; }
+    .day-head { align-items: flex-start; }
+    .day-actions { width: 100%; justify-content: flex-start; }
+  }
   .extras-entry .dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--treat) 28%, transparent); background: var(--treat); }
   .entry { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
   .entry .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
@@ -169,7 +178,7 @@
   dialog::backdrop { background: rgba(10, 15, 20, 0.45); }
   label { display: block; font-weight: 700; margin-bottom: 12px; }
   label.check { display: flex; gap: 8px; align-items: center; font-weight: 600; }
-  input[type=number], input[type=text], input[type=datetime-local], select {
+  input[type=number], input[type=text], input[type=date], input[type=datetime-local], select {
     display: block; width: 100%; margin-top: 4px; padding: 10px 12px;
     border: 2px solid var(--line); border-radius: 10px; background: var(--paper);
   }
@@ -367,6 +376,12 @@
   const catDay = t => dayKey(t - dayStartMs);
   const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
   const toLocalInput = t => { const d = new Date(t); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+  // When adding an event from a History day, start it at noon on that feeding day.
+  // Noon is safely after every supported custom day-start (midnight through 6 am).
+  const dayDefaultTime = key => {
+    const [y, m, d] = key.split("-").map(Number);
+    return toLocalInput(new Date(y, m - 1, d, 12, 0, 0, 0).getTime());
+  };
   const timeStr = t => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
@@ -794,7 +809,11 @@
       <section class="panel">
         <div class="history-title">
           <h2>History</h2>
-          <button class="ghost" id="editDailyCounts">+ Add/edit daily counts</button>
+          <div class="history-actions">
+            <button class="ghost" id="historyAddFeed">+ Add food</button>
+            <button class="ghost" id="historyAddCheck">+ Add leftovers</button>
+            <button class="ghost" id="editDailyCounts">+ Add/edit treats &amp; kibble</button>
+          </div>
         </div>
         ${groups.length ? groups.map(g => {
           const treats = (cat.treats || {})[g.key] || 0;
@@ -804,7 +823,11 @@
           <div class="day">
             <div class="day-head">
               <h3>${dayLabel(g.key)}</h3>
-              <button class="day-edit" data-edit-extras="${g.key}">Edit treats &amp; kibble</button>
+              <div class="day-actions">
+                <button class="day-edit" data-add-feed="${g.key}">+ Food</button>
+                <button class="day-edit" data-add-check="${g.key}">+ Leftovers</button>
+                <button class="day-edit" data-edit-extras="${g.key}">Edit treats &amp; kibble</button>
+              </div>
             </div>
             ${extras}${g.items.map(r => entryHTML(r, cat)).join("")}
           </div>`;
@@ -838,6 +861,10 @@
       if (ev) openEntryDlg(ev.type === "feed" ? "#feedDlg" : "#checkDlg", ev);
     });
     app.querySelectorAll("[data-edit-extras]").forEach(b => b.onclick = () => openExtrasDlg(b.dataset.editExtras));
+    app.querySelectorAll("[data-add-feed]").forEach(b => b.onclick = () => openEntryDlg("#feedDlg", null, b.dataset.addFeed));
+    app.querySelectorAll("[data-add-check]").forEach(b => b.onclick = () => openEntryDlg("#checkDlg", null, b.dataset.addCheck));
+    $("#historyAddFeed").onclick = () => openEntryDlg("#feedDlg");
+    $("#historyAddCheck").onclick = () => openEntryDlg("#checkDlg");
     $("#editDailyCounts").onclick = () => openExtrasDlg(catDay(Date.now()));
     $("#addCat").onclick = () => openCatDlg(null);
     $("#editCat").onclick = () => openCatDlg(cat);
@@ -922,13 +949,14 @@
   });
 
   let editingEntryId = null;
-  function openEntryDlg(sel, entry) {
+  function openEntryDlg(sel, entry, historyDay = null) {
     const dlg = $(sel), form = dlg.querySelector("form");
     form.reset();
     editingEntryId = entry ? entry.id : null;
     // New entries may omit the timestamp; blank means "use now" on save.
     // Existing entries are prefilled so their recorded date/time can be corrected.
-    form.elements.time.value = entry ? toLocalInput(entry.t) : "";
+    // Entries launched from a prior History day start at noon on that day, then can be adjusted.
+    form.elements.time.value = entry ? toLocalInput(entry.t) : historyDay ? dayDefaultTime(historyDay) : "";
     if (sel === "#feedDlg") {
       $("#feedTitle").textContent = entry ? "Edit feeding" : "Add food";
       $("#feedSubmit").textContent = entry ? "Save changes" : "Add food";
