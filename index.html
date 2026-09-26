@@ -332,6 +332,7 @@
       <label class="check"><input type="checkbox" name="target"> Daily target</label>
       <label class="check"><input type="checkbox" name="given" checked> Food given / offered</label>
       <label class="check"><input type="checkbox" name="chart" checked> Daily intake chart</label>
+      <label class="check"><input type="checkbox" name="daily" checked> Daily log</label>
       <label class="check"><input type="checkbox" name="details" checked> Detailed feeding / weigh-in log</label>
     </fieldset>
     <span class="hint">Treats and counted kibble are always included because they contribute to recorded intake.</span>
@@ -1193,6 +1194,7 @@
     f.elements.target.checked = !!cat.target;
     f.elements.given.checked = true;
     f.elements.chart.checked = true;
+    f.elements.daily.checked = true;
     f.elements.details.checked = true;
     dlg.showModal();
   }
@@ -1271,6 +1273,10 @@
         ${hasKcal ? `<td>${d.activity ? Math.round(dayKcal).toLocaleString() : "—"}</td>` : ""}
       </tr>`;
     }).join("");
+    const dailyLog = opts.daily ? `<section class="report-section"><h2>Daily log</h2>
+        <table class="report-table"><thead><tr><th>Date</th><th>Food eaten</th>${givenCol}<th>Treats</th><th>Kibble pieces</th>${kcalCol}</tr></thead><tbody>${tableRows}</tbody></table>
+        <p class="report-note">“Food eaten” is calculated from bowl measurements. Treats and counted kibble are logged separately and, when per-item calories are configured, are included in Total kcal. Blank days indicate no logged activity.</p>
+      </section>` : "";
 
     let details = "";
     if (opts.details) {
@@ -1298,10 +1304,7 @@
       </div>
       <div class="report-summary">${stats}</div>
       ${chart}
-      <section class="report-section"><h2>Daily log</h2>
-        <table class="report-table"><thead><tr><th>Date</th><th>Food eaten</th>${givenCol}<th>Treats</th><th>Kibble pieces</th>${kcalCol}</tr></thead><tbody>${tableRows}</tbody></table>
-        <p class="report-note">“Food eaten” is calculated from bowl measurements. Treats and counted kibble are logged separately and, when per-item calories are configured, are included in Total kcal. Blank days indicate no logged activity.</p>
-      </section>
+      ${dailyLog}
       ${details}
       <div class="report-footer">${targetNote}${needNote}${opts.need && need ? ` This estimate is informational and is not a veterinary prescription.` : ""}</div>`;
   }
@@ -1320,6 +1323,7 @@
       target: f.elements.target.checked,
       given: f.elements.given.checked,
       chart: f.elements.chart.checked,
+      daily: f.elements.daily.checked,
       details: f.elements.details.checked
     };
     const report = $("#printReport");
