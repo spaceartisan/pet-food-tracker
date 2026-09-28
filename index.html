@@ -177,6 +177,14 @@
   .baseline-summary b { color: var(--ink); }
   .baseline-summary.low { border-left: 4px solid var(--danger); }
   textarea { resize: vertical; min-height: 84px; }
+  [hidden] { display: none !important; }
+  .top-actions { display: flex; gap: 2px; }
+  .food-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .food-item .txt { flex: 1; min-width: 0; }
+  .food-item .txt small { display: block; color: var(--muted); }
+  #foodList .empty { padding: 4px 0 8px; }
+  p.scale-note { margin: -4px 0 12px; }
+  form[data-mode="eyeball"] .mode-scale, form[data-mode="scale"] .mode-eyeball { display: none; }
   .baseline-range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   @media (max-width: 560px) {
     .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -279,14 +287,32 @@
 <dialog id="feedDlg">
   <form method="dialog" id="feedForm">
     <h2 id="feedTitle">Add food</h2>
-    <label>Amount added (<span class="unit"></span>)
-      <input type="number" name="amount" min="0" step="any" required inputmode="decimal">
+    <p class="hint mode-scale scale-note"></p>
+    <label id="foodPickRow" hidden>Food
+      <select name="food"></select>
     </label>
-    <label>Left in bowl before adding (<span class="unit"></span>)
-      <span class="hint">Optional. Weigh what's left first and the app works out how much was eaten.</span>
-      <input type="number" name="leftover" min="0" step="any" inputmode="decimal">
-    </label>
+    <div class="mode-eyeball">
+      <label>Amount added (<span class="unit"></span>)
+        <input type="number" name="amount" min="0" step="any" inputmode="decimal">
+      </label>
+      <label>Left in bowl before adding (<span class="unit"></span>)
+        <span class="hint">Optional. Estimate what's left first and the app works out how much was eaten.</span>
+        <input type="number" name="leftover" min="0" step="any" inputmode="decimal">
+      </label>
+    </div>
+    <div class="mode-scale">
+      <label>Bowl before adding (<span class="unit"></span>)
+        <span class="hint">Optional. Weigh first to count what was eaten. Skip it if you just used “Weigh bowl”.</span>
+        <input type="number" name="before" min="0" step="any" inputmode="decimal">
+      </label>
+    </div>
     <label class="check"><input type="checkbox" name="discard"> Threw the old food out before adding</label>
+    <div class="mode-scale">
+      <label>Bowl after adding (<span class="unit"></span>)
+        <span class="hint">The app works out how much you added.</span>
+        <input type="number" name="after" min="0" step="any" inputmode="decimal">
+      </label>
+    </div>
     <label>When (optional)
       <span class="hint">Leave blank to use the current time. You can change it later from History.</span>
       <input type="datetime-local" name="time">
@@ -302,7 +328,8 @@
 <dialog id="checkDlg">
   <form method="dialog" id="checkForm">
     <h2 id="checkTitle">Weigh leftovers</h2>
-    <label>Food left in bowl (<span class="unit"></span>)
+    <label><span id="checkLabel">Food left in bowl</span> (<span class="unit"></span>)
+      <span class="hint mode-scale scale-note"></span>
       <input type="number" name="remaining" min="0" step="any" required inputmode="decimal">
     </label>
     <label class="check"><input type="checkbox" name="emptied"> Threw the leftovers out afterwards</label>
@@ -427,12 +454,66 @@
 
 <section id="printReport" aria-hidden="true"></section>
 
+<!-- Food profiles (shared by all cats) -->
+<dialog id="foodsDlg">
+  <div>
+    <h2>Foods</h2>
+    <p class="panel-note">Save each food with its calories. When you add food you pick which one, and calories are counted from that food.</p>
+    <div id="foodList"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Done</button>
+      <button type="button" class="btn feed" id="newFoodBtn">Add a food</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="foodDlg">
+  <form method="dialog" id="foodForm">
+    <h2 id="foodDlgTitle">Add a food</h2>
+    <label>Name
+      <input type="text" name="name" required maxlength="60" autocomplete="off" placeholder="e.g. Fancy Feast chicken">
+    </label>
+    <label>Calories (kcal)
+      <span class="hint">From the label.</span>
+      <div class="row">
+        <input type="number" name="kcal" min="0" step="any" required inputmode="decimal" aria-label="Calories">
+        <select name="per" aria-label="Per">
+          <option value="pouches">per can / pouch</option>
+          <option value="cups">per cup</option>
+          <option value="oz">per oz</option>
+          <option value="kg">per kg</option>
+        </select>
+      </div>
+    </label>
+    <label id="foodWeightRow">One <span id="foodPerName">can</span> weighs
+      <span class="hint">Optional. Use the net weight on the label. Needed only if you weigh food instead of counting cans.</span>
+      <div class="row">
+        <input type="number" name="unitWeight" min="0" step="any" inputmode="decimal" aria-label="Weight">
+        <select name="unitWeightUnit" aria-label="Unit"><option value="oz">oz</option><option value="g">g</option></select>
+      </div>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger" id="deleteFoodBtn" hidden>Remove</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Save food</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- Cat profile -->
 <dialog id="catDlg">
   <form method="dialog" id="catForm">
     <h2 id="catDlgTitle">Add a cat</h2>
     <label>Name
       <input type="text" name="name" required maxlength="40" autocomplete="off">
+    </label>
+    <label>How you measure food
+      <select name="method">
+        <option value="eyeball">Eyeball estimates</option>
+        <option value="scale">Weigh as you go (kitchen scale)</option>
+      </select>
+      <span class="hint" id="methodHint"></span>
     </label>
     <label>Unit
       <select name="unit">
@@ -442,12 +523,30 @@
         <option value="pouches">pouches / cans</option>
       </select>
     </label>
+    <label id="bowlWeightRow" hidden>Empty bowl weighs (<span id="bowlUnit">oz</span>)
+      <span class="hint">The app subtracts this from every reading, so you can weigh with the bowl on the scale. Leave blank if you zero the scale with the bowl on it instead.</span>
+      <input type="number" name="bowlWeight" min="0" step="any" inputmode="decimal">
+    </label>
+    <label id="pouchWeightRow" hidden>One pouch / can weighs about
+      <span class="hint">Converts between pouches and weight, so entries logged in either unit still add up.</span>
+      <div class="row">
+        <input type="number" name="pouchWeight" min="0" step="any" inputmode="decimal" aria-label="Weight of one pouch or can">
+        <select name="pouchWeightUnit" aria-label="Unit"><option value="oz">oz</option><option value="g">g</option></select>
+      </div>
+    </label>
+    <label id="cupWeightRow" hidden>One cup of food weighs about
+      <span class="hint">Converts between cups and weight, so entries logged in either unit still add up.</span>
+      <div class="row">
+        <input type="number" name="cupWeight" min="0" step="any" inputmode="decimal" aria-label="Weight of one cup">
+        <select name="cupWeightUnit" aria-label="Unit"><option value="oz">oz</option><option value="g">g</option></select>
+      </div>
+    </label>
     <label>Daily target (<span class="unitName">cans</span>)
       <span class="hint">Optional. Shown as a line on the charts.</span>
       <input type="number" name="target" min="0" step="any" inputmode="decimal">
     </label>
     <label>Calories per <span class="unitName">can</span> (kcal)
-      <span class="hint">Optional. Printed on the label. Turns on the calorie chart.</span>
+      <span class="hint">Optional. Used for feedings with no food picked. If you set up Foods, you can leave this blank.</span>
       <input type="number" name="kcal" min="0" step="any" inputmode="decimal">
     </label>
     <label>Calories per treat (kcal)
@@ -512,7 +611,7 @@
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const d = JSON.parse(raw);
-        if (d && Array.isArray(d.cats)) return d;
+        if (d && Array.isArray(d.cats)) return migrate(d);
       }
     } catch (e) { console.warn("Could not read saved data", e); }
     return { cats: [], activeId: null, range: 14 };
@@ -531,6 +630,54 @@
   const unitSingular = u => ({ g: "gram", oz: "ounce", cups: "cup", pouches: "pouch or can" }[u] || u);
   const unitPlural = u => ({ g: "g", oz: "oz", cups: "cups", pouches: "pouches / cans" }[u] || u);
   const unitFor = (n, unit) => round(n) === 1 ? ({ cups: "cup", pouches: "pouch" }[unit] || unit) : unit;
+  // Unit conversion. Weight units convert directly; pouches and cups convert through
+  // the cat's "one pouch/cup weighs" setting (stored in grams in cat.unitWeights).
+  const GRAMS = { g: 1, oz: 28.349523125, kg: 1000 };
+  const isWeightUnit = u => u in GRAMS;
+  const gramsPer = (u, w) => GRAMS[u] ?? (w && w[u] > 0 ? w[u] : null);
+  // How many `to` units are in one `from` unit (null if it can't be worked out).
+  function unitFactor(from, to, w) {
+    if (from === to) return 1;
+    const a = gramsPer(from, w), b = gramsPer(to, w);
+    return a && b ? a / b : null;
+  }
+  // Every entry remembers the unit it was logged in. Older entries predate that, so they get the cat's unit.
+  function migrate(data) {
+    for (const c of data.cats || []) {
+      c.events = c.events || [];
+      for (const e of c.events) if (!e.u) e.u = c.unit;
+      c.method = c.method || "eyeball";
+      c.unitWeights = c.unitWeights || {};
+    }
+    data.foods = data.foods || [];
+    return data;
+  }
+
+  // ---------- Foods ----------
+  // A food is { id, name, kcal, per, unitG, archived }: kcal per one `per` (pouches, cups, oz, kg),
+  // and unitG = grams in one can/cup, for converting to weights. Removed foods are archived, not deleted,
+  // so old feedings keep their calories.
+  const foodById = id => (state.foods || []).find(f => f.id === id) || null;
+  const activeFoods = () => (state.foods || []).filter(f => !f.archived);
+  const perLabel = per => ({ pouches: "can", cups: "cup", oz: "oz", kg: "kg" }[per] || per);
+  const foodWeights = (cat, f) => {
+    const w = { ...(cat.unitWeights || {}) };
+    if (f && f.unitG > 0) w[f.per] = f.unitG;
+    return w;
+  };
+  // kcal in one of the cat's units (null if the units can't be converted)
+  function foodDensity(cat, f) {
+    if (!f || !(f.kcal > 0)) return null;
+    const k = unitFactor(cat.unit, f.per, foodWeights(cat, f));
+    return k ? f.kcal * k : null;
+  }
+  // Reference calories per unit: the cat's own setting, or else the food used most recently.
+  // Charts use it to line the kcal axis up with the food axis.
+  function refKcal(cat) {
+    if (cat.kcal > 0) return cat.kcal;
+    const recent = [...(cat.events || [])].filter(e => e.food).sort((a, b) => b.t - a.t)[0];
+    return foodDensity(cat, foodById(cat.lastFood) || foodById(recent && recent.food) || activeFoods()[0]) || 0;
+  }
   const fmt = (n, cat) => `${round(n).toLocaleString()} ${unitFor(n, cat.unit)}`;
   // Each cat can have its "day" start after midnight (e.g. 3 am) so late-night feedings count toward the evening before.
   let dayStartMs = 0;
@@ -563,59 +710,88 @@
   }
   const appetiteLabels = { normal: "Normal", reduced: "Reduced", poor: "Poor", refused: "Refused food", increased: "Increased" };
   const appetiteLabel = value => appetiteLabels[value] || "";
-  const dayIntake = d => d.eaten + d.treatU + d.kibbleU;
+  const dayIntake = d => d.eatenU + d.treatU + d.kibbleU;
 
   // ---------- Core calculation ----------
   // Walks events in time order, tracking the estimated amount in the bowl.
   // Eating is only known when the bowl is weighed (a "check", or a feed with a leftover amount).
+  // Weigh-as-you-go feedings store the bowl weight after adding ("after"); the amount added is worked out here.
+  // All returned amounts are converted to the cat's current unit.
   function compute(cat) {
     const events = [...cat.events].sort((a, b) => a.t - b.t);
-    let level = 0;
+    const R = refKcal(cat);
+    // The bowl is treated as a mix: `mix` is kcal per unit of what's in it, so topping up chicken with
+    // turkey counts each at its own calories.
+    let level = 0, mix = R;
     const rows = [];
     for (const e of events) {
-      let eaten = null, discarded = 0;
+      const food = e.type === "feed" && e.food ? foodById(e.food) : null;
+      const w = foodWeights(cat, food);
+      const cv = v => v == null ? v : v * (unitFactor(e.u || cat.unit, cat.unit, w) ?? 1);
+      let eaten = null, eatenK = null, discarded = 0, amount = null, givenK = 0;
+      // Scale entries may include the bowl; e.tare is the bowl weight (in the entry's unit) when it was logged.
+      const net = v => v == null ? v : Math.max(0, v - (e.tare || 0));
+      const leftover = cv(net(e.leftover)), remaining = cv(net(e.remaining)), after = cv(net(e.after));
+      const ate = x => { eaten = (eaten ?? 0) + x; eatenK = (eatenK ?? 0) + x * mix; };
       if (e.type === "feed") {
-        if (e.leftover != null) {
-          eaten = Math.max(0, level - e.leftover);
-          level = e.leftover;
-        }
+        if (leftover != null) { ate(Math.max(0, level - leftover)); level = leftover; }
         if (e.discard) { discarded = level; level = 0; }
-        level += e.amount;
+        if (after != null) {
+          if (after >= level) amount = after - level;
+          else { ate(level - after); amount = 0; level = after; } // bowl got lighter: count the difference as eaten
+        } else {
+          amount = cv(e.amount) || 0;
+        }
+        const d = foodDensity(cat, food) ?? R;
+        if (amount > 0) mix = level > 0 ? (level * mix + amount * d) / (level + amount) : d;
+        givenK = amount * d;
+        level += amount;
       } else if (e.type === "check") {
-        eaten = Math.max(0, level - e.remaining);
-        level = e.remaining;
+        ate(Math.max(0, level - remaining));
+        level = remaining;
         if (e.emptied) { discarded = level; level = 0; }
       }
-      rows.push({ ...e, eaten, discarded, levelAfter: level });
+      rows.push({ ...e, amount, leftover, remaining, after, eaten, eatenK, givenK, discarded, levelAfter: level, foodName: food ? food.name : "" });
     }
     return { rows, level };
   }
 
+  const emptyDay = () => ({ given: 0, eaten: 0, givenK: 0, eatenK: 0, feeds: 0, events: 0, measurements: 0 });
+  function addRow(day, r) {
+    day.events++;
+    if (r.type === "feed") { day.given += r.amount; day.givenK += r.givenK || 0; day.feeds++; }
+    if (r.eaten != null) { day.eaten += r.eaten; day.eatenK += r.eatenK || 0; day.measurements++; }
+  }
+  // Adds treats/kibble and the "U" values charts use. U values are calories expressed in the cat's
+  // food unit at the reference calories (R), so the kcal axis is exact even when foods differ.
+  function finishDay(cat, key, date, base, R) {
+    const treats = (cat.treats || {})[key] || 0;
+    const kibbles = (cat.kibbles || {})[key] || 0;
+    const treatK = treats * (cat.treatKcal || 0);
+    const kibbleK = kibbles * (cat.kibbleKcal || 0);
+    const treatU = R ? treatK / R : 0;
+    const kibbleU = R ? kibbleK / R : 0;
+    const eatenU = R ? base.eatenK / R : base.eaten;
+    const givenU = R ? base.givenK / R : base.given;
+    // Activity records that something was logged; intakeKnown is stricter for appetite analytics.
+    const activity = base.events > 0 || treats > 0 || kibbles > 0;
+    const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
+    return { key, date, ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, eatenU, givenU, activity, intakeKnown };
+  }
+
   function dailyTotals(cat, rows, days) {
+    const R = refKcal(cat);
     const map = {};
     for (const r of rows) {
       const k = catDay(r.t);
-      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
-      map[k].events++;
-      if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
-      if (r.eaten != null) { map[k].eaten += r.eaten; map[k].measurements++; }
+      map[k] = map[k] || emptyDay();
+      addRow(map[k], r);
     }
     const out = [];
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(Date.now() - dayStartMs); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i);
       const k = dayKey(d);
-      const base = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
-      const treats = (cat.treats || {})[k] || 0;
-      const kibbles = (cat.kibbles || {})[k] || 0;
-      const treatK = treats * (cat.treatKcal || 0);
-      const kibbleK = kibbles * (cat.kibbleKcal || 0);
-      // Extra calories expressed in food units so they can stack on food charts.
-      const treatU = cat.kcal ? treatK / cat.kcal : 0;
-      const kibbleU = cat.kcal ? kibbleK / cat.kcal : 0;
-      // Activity records that something was logged; intakeKnown is stricter for appetite analytics.
-      const activity = base.events > 0 || treats > 0 || kibbles > 0;
-      const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
-      out.push({ key: k, date: d, ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity, intakeKnown });
+      out.push(finishDay(cat, k, d, map[k] || emptyDay(), R));
     }
     return out;
   }
@@ -652,8 +828,8 @@
     return { avg: logged.reduce((a, d) => a + dayIntake(d), 0) / logged.length, n: logged.length };
   }
 
-  const intakeDisplay = (v, cat) => cat.kcal
-    ? `${Math.round(v * cat.kcal).toLocaleString()} kcal`
+  const intakeDisplay = (v, cat) => refKcal(cat)
+    ? `${Math.round(v * refKcal(cat)).toLocaleString()} kcal`
     : fmt(v, cat);
 
   // ---------- Rendering ----------
@@ -710,12 +886,14 @@
   }
   const refLinesSVG = (g, lines) => lines.map(l =>
     `<line x1="${g.padL}" x2="${g.W - g.padR}" y1="${g.y(l.v)}" y2="${g.y(l.v)}" stroke="${l.color}" stroke-width="2" stroke-dasharray="${l.dash}" opacity=".75"/>`).join("");
+  // actual amount with its exact calories
+  const amtK = (v, k, ax) => `${round(v).toLocaleString()} ${ax.unit}${ax.k ? ` (${Math.round(k).toLocaleString()} kcal)` : ""}`;
   const amt = (v, ax) => `${round(v).toLocaleString()} ${ax.unit}${ax.k ? ` (${Math.round(v * ax.k).toLocaleString()} kcal)` : ""}`;
 
   // days: [{date, given, eaten}] in food units; ax: {unit, k}; lines: [{v, color, dash}] in food units
   function chartSVG(days, ax, lines = [], label = "Daily chart", opts = {}) {
     const includeGiven = opts.includeGiven !== false;
-    const sc = scale(Math.max(...lines.map(l => l.v), ...days.map(d => Math.max(includeGiven ? d.given : 0, d.eaten + d.treatU + d.kibbleU))));
+    const sc = scale(Math.max(...lines.map(l => l.v), ...days.map(d => Math.max(includeGiven ? d.givenU : 0, dayIntake(d)))));
     const g = geom(sc, ax), { W, H, padL, padR, padT, padB, y } = g;
     const n = days.length, bw = (W - padL - padR) / n;
     let s = `<svg class="fit" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">` + axesSVG(g, sc, ax);
@@ -724,12 +902,13 @@
       const x = padL + i * bw;
       const gw = bw * 0.7, ew = bw * 0.44;
       const gx = x + (bw - gw) / 2, ex = x + (bw - ew) / 2;
-      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amt(d.given, ax)}, ` : ""}eaten ${amt(d.eaten, ax)}${d.treats ? `, plus ${d.treats} treat${d.treats === 1 ? "" : "s"}${d.treatK ? ` (${Math.round(d.treatK)} kcal)` : ""}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
+      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amtK(d.given, d.givenK, ax)}, ` : ""}eaten ${amtK(d.eaten, d.eatenK, ax)}${d.treats ? `, plus ${d.treats} treat${d.treats === 1 ? "" : "s"}${d.treatK ? ` (${Math.round(d.treatK)} kcal)` : ""}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
       s += `<g><title>${esc(tip)}</title>`;
-      if (includeGiven) s += `<rect x="${gx}" y="${y(d.given)}" width="${gw}" height="${Math.max(0, y(0) - y(d.given))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
-      s += `<rect x="${ex}" y="${y(d.eaten)}" width="${ew}" height="${Math.max(0, y(0) - y(d.eaten))}" rx="3" fill="var(--eaten)"/>`;
-      if (d.treatU > 0) s += `<rect x="${ex}" y="${y(d.eaten + d.treatU)}" width="${ew}" height="${Math.max(0, y(d.eaten) - y(d.eaten + d.treatU))}" rx="2" fill="var(--treat)"/>`;
-      if (d.kibbleU > 0) s += `<rect x="${ex}" y="${y(d.eaten + d.treatU + d.kibbleU)}" width="${ew}" height="${Math.max(0, y(d.eaten + d.treatU) - y(d.eaten + d.treatU + d.kibbleU))}" rx="2" fill="var(--piece)"/>`;
+      const e = d.eatenU;
+      if (includeGiven) s += `<rect x="${gx}" y="${y(d.givenU)}" width="${gw}" height="${Math.max(0, y(0) - y(d.givenU))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
+      s += `<rect x="${ex}" y="${y(e)}" width="${ew}" height="${Math.max(0, y(0) - y(e))}" rx="3" fill="var(--eaten)"/>`;
+      if (d.treatU > 0) s += `<rect x="${ex}" y="${y(e + d.treatU)}" width="${ew}" height="${Math.max(0, y(e) - y(e + d.treatU))}" rx="2" fill="var(--treat)"/>`;
+      if (d.kibbleU > 0) s += `<rect x="${ex}" y="${y(e + d.treatU + d.kibbleU)}" width="${ew}" height="${Math.max(0, y(e + d.treatU) - y(e + d.treatU + d.kibbleU))}" rx="2" fill="var(--piece)"/>`;
       const total = dayIntake(d);
       if (opts.baseline && d.intakeKnown && d.key !== catDay(Date.now()) && total < opts.baseline * (opts.lowThreshold || 0.75)) {
         s += `<rect x="${ex - 2}" y="${y(total) - 2}" width="${ew + 4}" height="${Math.max(4, y(0) - y(total) + 4)}" rx="4" fill="none" stroke="var(--danger)" stroke-width="2"/>`;
@@ -753,7 +932,7 @@
     const days = dailyTotals(cat, rows, (weeks - 1) * 7 + wd + 1);
     let ref = m.ref;
     if (!ref) { // no target or need set: compare against his own typical day
-      const vals = days.filter(d => d.activity && (d.eaten + d.treatU + d.kibbleU) > 0).map(d => (d.eaten + d.treatU + d.kibbleU) * m.conv).sort((a, b) => a - b);
+      const vals = days.filter(d => d.activity && dayIntake(d) > 0).map(d => dayIntake(d) * m.conv).sort((a, b) => a - b);
       ref = vals.length ? vals[Math.floor(vals.length / 2)] : 1;
     }
     const step = 16, cell = 13, left = 24, top = 18;
@@ -770,7 +949,7 @@
       if (row === 0 && (d.date.getDate() <= 7 || (col === 0 && d.date.getDate() <= 17))) {
         s += `<text x="${x}" y="11" font-size="10" fill="var(--muted)">${d.date.toLocaleDateString([], { month: "short" })}</text>`;
       }
-      const v = (d.eaten + d.treatU + d.kibbleU) * m.conv;
+      const v = dayIntake(d) * m.conv;
       const tip = d.activity ? `${shortDate(d.date)}: ${num(v, m.isKcal)} ${m.unit} eaten (${Math.round(v / ref * 100)}% of ${m.refLabel})` : `${shortDate(d.date)}: nothing logged`;
       const fill = d.activity ? `fill="var(--eaten)" fill-opacity="${shade(v / ref)}"` : `fill="var(--line)" fill-opacity=".5"`;
       const ring = d.key === todayKey ? ` stroke="var(--ink)" stroke-width="1.5"` : "";
@@ -785,8 +964,8 @@
     const pts = [];
     for (let i = 6; i < all.length; i++) {
       const win = all.slice(i - 6, i + 1).filter(d => d.activity);
-      pts.push({ date: all[i].date, day: all[i].activity ? all[i].eaten + all[i].treatU + all[i].kibbleU : null,
-                 avg: win.length ? win.reduce((a, d) => a + d.eaten + d.treatU + d.kibbleU, 0) / win.length : null });
+      pts.push({ date: all[i].date, day: all[i].activity ? dayIntake(all[i]) : null,
+                 avg: win.length ? win.reduce((a, d) => a + dayIntake(d), 0) / win.length : null });
     }
     return pts;
   }
@@ -877,12 +1056,12 @@
     const weekEaten = week.reduce((a, d) => a + d.eaten, 0);
     const daysWithData = Math.max(1, week.filter(d => d.activity).length);
     const lastFeed = [...rows].reverse().find(r => r.type === "feed");
-    const kpu = cat.kcal || 0;
+    const kpu = refKcal(cat);
     const need = kcalNeed(cat);
     const targetKcal = cat.target && kpu ? cat.target * kpu : 0;
     const activeWeek = week.filter(d => d.activity);
-    const weekKcalAvg = (weekEaten * kpu + activeWeek.reduce((a, d) => a + d.treatK + d.kibbleK, 0)) / daysWithData;
-    const todayKcal = today.eaten * kpu + today.treatK + today.kibbleK;
+    const weekKcalAvg = activeWeek.reduce((a, d) => a + d.eatenK + d.treatK + d.kibbleK, 0) / daysWithData;
+    const todayKcal = today.eatenK + today.treatK + today.kibbleK;
     const baseline = appetiteBaseline(cat, rows);
     const rolling = Object.fromEntries([3, 7, 14, 30].map(n => [n, rollingAppetite(cat, rows, n)]));
     const measure = kpu
@@ -902,8 +1081,10 @@
           label: `Estimated need (${Math.round(need)} kcal, ${fmt(need / kpu, cat)})` }] : [])
     ];
     const refLegend = () => refs.map(r => `<span>${lineKey(r.color, r.dash)}${esc(r.label)}</span>`).join("");
+    const mixedFoods = new Set(rows.filter(r => r.type === "feed" && r.amount > 0 && days.some(d => d.key === catDay(r.t))).map(r => r.food || "")).size > 1;
     const calorieNote = !kpu
-      ? `<p class="panel-note">Add calories per ${esc(unitSingular(cat.unit))} in “Edit ${esc(cat.name)}” to show calories on the right-hand axis.</p>`
+      ? `<p class="panel-note">Add a food under “Foods”, or calories per ${esc(unitSingular(cat.unit))} in “Edit ${esc(cat.name)}”, to show calories on the right-hand axis.</p>`
+      : mixedFoods ? `<p class="panel-note">Bars are drawn by calories, since the foods differ. The left axis converts them to ${esc(ax.unit)} of a ${Math.round(kpu * 10) / 10} kcal/${esc(unitFor(1, cat.unit))} food. Tap a bar for the amounts actually eaten.</p>`
       : !need ? `<p class="panel-note">Add ${esc(cat.name)}'s weight in “Edit ${esc(cat.name)}” to see their estimated daily need.</p>` : "";
     const dailyPanel = () => `
         <div class="chart-wrap">${chartSVG(days, ax, refs, "Food given and eaten per day", { baseline: baseline.value, lowThreshold: baseline.threshold })}</div>
@@ -971,7 +1152,10 @@
       <header>
         <div class="top">
           <h1>🐈 Food bowl</h1>
-          <button class="ghost" id="editCat">Edit ${esc(cat.name)}</button>
+          <div class="top-actions">
+            <button class="ghost" id="foodsBtn">Foods</button>
+            <button class="ghost" id="editCat">Edit ${esc(cat.name)}</button>
+          </div>
         </div>
         <div class="cats" role="group" aria-label="Choose cat">
           ${state.cats.map(c => `<button class="cat-chip" data-cat="${c.id}" aria-pressed="${c.id === cat.id}">${esc(c.name)}</button>`).join("")}
@@ -982,11 +1166,11 @@
       <div class="hero">
         ${bowlSVG(level, capacity)}
         <div>
-          <div class="level">${round(level).toLocaleString()} <small>${esc(unitFor(level, cat.unit))} in the bowl (estimate)</small></div>
+          <div class="level">${round(level).toLocaleString()} <small>${esc(unitFor(level, cat.unit))} in the bowl${cat.method === "scale" ? "" : " (estimate)"}</small></div>
           <p>${lastFeed ? `Last fed ${ago(lastFeed.t)} (${fmt(lastFeed.amount, cat)})` : "No feedings logged yet."}</p>
           <div class="actions">
             <button class="btn feed" id="feedBtn">Add food</button>
-            <button class="btn check" id="checkBtn">Weigh leftovers</button>
+            <button class="btn check" id="checkBtn">${cat.method === "scale" ? "Weigh bowl" : "Weigh leftovers"}</button>
           </div>
           <div class="counter-row">
             <span>Treats today</span>
@@ -1115,6 +1299,7 @@
     $("#baselineSettings").onclick = openBaselineDlg;
     $("#addCat").onclick = () => openCatDlg(null);
     $("#editCat").onclick = () => openCatDlg(cat);
+    $("#foodsBtn").onclick = openFoodsDlg;
     const bumpDailyCount = (field, delta) => {
       const k = catDay(Date.now());
       cat[field] = cat[field] || {};
@@ -1136,8 +1321,10 @@
   function entryHTML(r, cat) {
     let color, title, detail = [];
     if (r.type === "feed") {
-      color = "var(--kibble)"; title = `Added ${fmt(r.amount, cat)}`;
-      if (r.leftover != null) detail.push(`${fmt(r.leftover, cat)} was left`);
+      color = "var(--kibble)";
+      title = r.after != null ? `Filled bowl to ${fmt(r.after, cat)} (added ${fmt(r.amount, cat)})` : `Added ${fmt(r.amount, cat)}`;
+      if (r.foodName) detail.push(esc(r.foodName));
+      if (r.leftover != null) detail.push(`${fmt(r.leftover, cat)} ${r.after != null ? "in bowl before" : "was left"}`);
       if (r.eaten != null) detail.push(`${fmt(r.eaten, cat)} eaten since last check`);
       if (r.discarded) detail.push(`${fmt(r.discarded, cat)} thrown out`);
     } else {
@@ -1256,6 +1443,8 @@
   });
 
   let editingEntryId = null;
+  let entryUnit = null; // unit the open entry form is recorded in
+  let entryTare = 0;    // bowl weight subtracted from the open form's readings
   function openEntryDlg(sel, entry, historyDay = null) {
     const dlg = $(sel), form = dlg.querySelector("form");
     form.reset();
@@ -1264,22 +1453,53 @@
     // Existing entries are prefilled so their recorded date/time can be corrected.
     // Entries launched from a prior History day start at noon on that day, then can be adjusted.
     form.elements.time.value = entry ? toLocalInput(entry.t) : historyDay ? dayDefaultTime(historyDay) : "";
+    const cat = activeCat();
+    // An existing entry keeps the method and unit it was logged with; new entries use the cat's current setting.
+    const mode = entry ? (entry.m || (entry.after != null ? "scale" : "eyeball")) : (cat.method === "scale" ? "scale" : "eyeball");
+    entryUnit = entry ? (entry.u || cat.unit) : cat.unit;
+    // Bowl weight: an existing entry keeps the one it was logged with, so changing bowls later doesn't rewrite history.
+    entryTare = mode !== "scale" ? 0
+      : entry ? (entry.tare || 0)
+      : (cat.bowlG && isWeightUnit(entryUnit) ? cat.bowlG / GRAMS[entryUnit] : 0);
+    dlg.querySelectorAll(".scale-note").forEach(n => n.textContent = entryTare
+      ? `Enter what the scale shows with the bowl on it. The app subtracts the ${round(entryTare)} ${entryUnit} bowl.`
+      : "Zero the scale with the empty bowl on it, so it reads just the food.");
+    form.dataset.mode = mode;
     if (sel === "#feedDlg") {
+      // food picker: active foods, plus the entry's own food if it has since been removed
+      const pick = form.elements.food;
+      const opts = activeFoods().slice();
+      const own = entry && entry.food && foodById(entry.food);
+      if (own && own.archived) opts.push(own);
+      const fallback = cat.kcal ? `${round(cat.kcal)} kcal per ${unitSingular(cat.unit)}` : "counted like the most recent food";
+      pick.innerHTML = opts.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join("")
+        + `<option value="">Not specified (${esc(fallback)})</option>`;
+      const want = entry ? (entry.food || "") : (foodById(cat.lastFood) && !foodById(cat.lastFood).archived ? cat.lastFood : (opts[0] ? opts[0].id : ""));
+      pick.value = want;
+      $("#foodPickRow").hidden = !opts.length;
       $("#feedTitle").textContent = entry ? "Edit feeding" : "Add food";
       $("#feedSubmit").textContent = entry ? "Save changes" : "Add food";
+      form.elements.amount.required = mode === "eyeball";
+      form.elements.after.required = mode === "scale";
       if (entry) {
-        form.elements.amount.value = entry.amount;
-        form.elements.leftover.value = entry.leftover ?? "";
         form.elements.discard.checked = !!entry.discard;
+        if (mode === "scale") {
+          form.elements.before.value = entry.leftover ?? "";
+          form.elements.after.value = entry.after;
+        } else {
+          form.elements.amount.value = entry.amount;
+          form.elements.leftover.value = entry.leftover ?? "";
+        }
       }
     } else {
-      $("#checkTitle").textContent = entry ? "Edit leftovers" : "Weigh leftovers";
+      $("#checkTitle").textContent = entry ? (mode === "scale" ? "Edit weigh-in" : "Edit leftovers") : (mode === "scale" ? "Weigh bowl" : "Weigh leftovers");
+      $("#checkLabel").textContent = mode === "scale" ? "Bowl weighs" : "Food left in bowl";
       if (entry) {
         form.elements.remaining.value = entry.remaining;
         form.elements.emptied.checked = !!entry.emptied;
       }
     }
-    dlg.querySelectorAll(".unit").forEach(u => u.textContent = activeCat().unit);
+    dlg.querySelectorAll(".unit").forEach(u => u.textContent = entryUnit);
     dlg.showModal();
     const first = form.querySelector("input[type=number]");
     first && first.focus();
@@ -1294,13 +1514,19 @@
 
   $("#feedForm").addEventListener("submit", e => {
     const f = e.target, cat = activeCat();
-    const amount = parseFloat(f.elements.amount.value);
-    if (!(amount >= 0)) { e.preventDefault(); return; }
-    const lo = f.elements.leftover.value.trim();
-    saveEntry(cat, {
-      type: "feed", t: new Date(f.elements.time.value).getTime() || Date.now(),
-      amount, leftover: lo === "" ? null : parseFloat(lo), discard: f.elements.discard.checked
-    });
+    const t = new Date(f.elements.time.value).getTime() || Date.now();
+    const num = name => { const v = f.elements[name].value.trim(); return v === "" ? null : parseFloat(v); };
+    const food = f.elements.food.value || null;
+    if (!$("#foodPickRow").hidden) cat.lastFood = food || "";
+    if (f.dataset.mode === "scale") {
+      const after = num("after");
+      if (!(after >= 0)) { e.preventDefault(); return; }
+      saveEntry(cat, { type: "feed", t, u: entryUnit, m: "scale", tare: entryTare, after, amount: null, leftover: num("before"), discard: f.elements.discard.checked, food });
+    } else {
+      const amount = num("amount");
+      if (!(amount >= 0)) { e.preventDefault(); return; }
+      saveEntry(cat, { type: "feed", t, u: entryUnit, m: "eyeball", tare: 0, amount, after: null, leftover: num("leftover"), discard: f.elements.discard.checked, food });
+    }
     save(); render();
   });
 
@@ -1310,10 +1536,77 @@
     if (!(remaining >= 0)) { e.preventDefault(); return; }
     saveEntry(cat, {
       type: "check", t: new Date(f.elements.time.value).getTime() || Date.now(),
-      remaining, emptied: f.elements.emptied.checked
+      u: entryUnit, m: f.dataset.mode, tare: entryTare, remaining, emptied: f.elements.emptied.checked
     });
     save(); render();
   });
+
+  // ---------- Foods dialogs ----------
+  let editingFoodId = null;
+  function renderFoodList() {
+    const cat = activeCat();
+    const foods = activeFoods();
+    $("#foodList").innerHTML = foods.length ? foods.map(f => {
+      const d = cat ? foodDensity(cat, f) : null;
+      const extra = [];
+      if (f.unitG > 0) extra.push(`${perLabel(f.per)} weighs ${round(f.unitG / GRAMS.oz)} oz`);
+      if (d && cat && cat.unit !== f.per) extra.push(`≈ ${round(d)} kcal per ${unitFor(1, cat.unit)}`);
+      return `<div class="food-item"><div class="txt"><b>${esc(f.name)}</b>
+        <small>${round(f.kcal).toLocaleString()} kcal per ${perLabel(f.per)}${extra.length ? ", " + extra.join(", ") : ""}</small></div>
+        <button class="ghost" data-food-edit="${f.id}">Edit</button></div>`;
+    }).join("") : `<p class="empty">No foods yet.</p>`;
+    $("#foodList").querySelectorAll("[data-food-edit]").forEach(b => b.onclick = () => openFoodDlg(foodById(b.dataset.foodEdit)));
+  }
+  function openFoodsDlg() { renderFoodList(); $("#foodsDlg").showModal(); }
+  function syncFoodForm() {
+    const per = $("#foodForm").elements.per.value;
+    $("#foodWeightRow").hidden = !(per === "pouches" || per === "cups");
+    $("#foodPerName").textContent = perLabel(per);
+  }
+  $("#foodForm").elements.per.addEventListener("change", syncFoodForm);
+  function openFoodDlg(food) {
+    const f = $("#foodForm");
+    f.reset();
+    editingFoodId = food ? food.id : null;
+    $("#foodDlgTitle").textContent = food ? "Edit food" : "Add a food";
+    $("#deleteFoodBtn").hidden = !food;
+    if (food) {
+      f.elements.name.value = food.name;
+      f.elements.kcal.value = food.kcal;
+      f.elements.per.value = food.per;
+      const wu = food.unitWeightUnit || "oz";
+      f.elements.unitWeightUnit.value = wu;
+      f.elements.unitWeight.value = food.unitG ? round(food.unitG / GRAMS[wu]) : "";
+    }
+    syncFoodForm();
+    $("#foodDlg").showModal();
+    f.elements.name.focus();
+  }
+  $("#foodForm").addEventListener("submit", e => {
+    const f = e.target;
+    const name = f.elements.name.value.trim(), kcal = parseFloat(f.elements.kcal.value);
+    if (!name || !(kcal > 0)) { e.preventDefault(); return; }
+    const per = f.elements.per.value, wu = f.elements.unitWeightUnit.value;
+    const w = parseFloat(f.elements.unitWeight.value);
+    const data = { name, kcal, per, unitG: (per === "pouches" || per === "cups") && w > 0 ? w * GRAMS[wu] : 0, unitWeightUnit: wu };
+    state.foods = state.foods || [];
+    const existing = editingFoodId && foodById(editingFoodId);
+    if (existing) Object.assign(existing, data);
+    else {
+      const food = { id: uid(), ...data };
+      state.foods.push(food);
+      const cat = activeCat();
+      if (cat && !foodById(cat.lastFood)) cat.lastFood = food.id; // first food becomes the default pick
+    }
+    save(); renderFoodList(); render();
+  });
+  $("#newFoodBtn").onclick = () => openFoodDlg(null);
+  $("#deleteFoodBtn").onclick = () => {
+    const food = foodById(editingFoodId);
+    if (!food || !confirm(`Remove ${food.name}? Past feedings keep its calories.`)) return;
+    food.archived = true;
+    $("#foodDlg").close(); save(); renderFoodList(); render();
+  };
 
   let editingCatId = null;
   function updateUnitNames() {
@@ -1322,7 +1615,67 @@
     spans[0].textContent = unitPlural(u);
     spans[1].textContent = unitSingular(u);
   }
-  $("#catForm").elements.unit.addEventListener("change", updateUnitNames);
+
+  // The target and kcal fields follow the unit: switching pouches → oz converts them with the pouch weight.
+  // catFormBase holds the last values the person typed and the unit they were typed in.
+  let catFormBase = null;
+  let bowlFieldUnit = null; // unit the bowl-weight field is currently shown in
+  const WEIGHT_FIELDS = [["pouches", "pouchWeight"], ["cups", "cupWeight"]];
+  const cf = () => $("#catForm").elements;
+  function formWeights() {
+    const cat = state.cats.find(c => c.id === editingCatId);
+    const w = { ...(cat?.unitWeights || {}) };
+    for (const [u, name] of WEIGHT_FIELDS) {
+      const v = parseFloat(cf()[name].value);
+      if (v > 0) w[u] = v * GRAMS[cf()[name + "Unit"].value]; else delete w[u];
+    }
+    return w;
+  }
+  function unitsInPlay() {
+    const cat = state.cats.find(c => c.id === editingCatId);
+    const set = new Set([cf().unit.value]);
+    if (cat) { set.add(cat.unit); cat.events.forEach(e => e.u && set.add(e.u)); }
+    return set;
+  }
+  const fmtField = v => v ? String(Math.round(v * 100) / 100) : "";
+  function syncCatForm(convert = true) {
+    const f = cf(), scale = f.method.value === "scale";
+    // Scale readings are weights, so weigh-as-you-go needs grams or ounces.
+    for (const o of f.unit.options) o.disabled = scale && !isWeightUnit(o.value);
+    if (scale && !isWeightUnit(f.unit.value)) f.unit.value = "oz";
+    $("#methodHint").textContent = scale
+      ? "Weigh the bowl whenever you check it or refill it. The app works out what was eaten and what you added."
+      : "Log roughly how much you add and how much is left.";
+    // Ask for pouch/cup weight whenever those units mix with another unit.
+    const units = unitsInPlay();
+    for (const [u, name] of WEIGHT_FIELDS) {
+      const need = units.has(u) && units.size > 1;
+      $(`#${name}Row`).hidden = !need;
+      f[name].required = need;
+    }
+    $("#bowlWeightRow").hidden = !scale;
+    // keep the bowl weight the same physical weight if the unit flips between g and oz
+    const bw = parseFloat(f.bowlWeight.value);
+    if (bw > 0 && bowlFieldUnit && isWeightUnit(f.unit.value) && bowlFieldUnit !== f.unit.value)
+      f.bowlWeight.value = fmtField(bw * GRAMS[bowlFieldUnit] / GRAMS[f.unit.value]);
+    if (isWeightUnit(f.unit.value)) bowlFieldUnit = f.unit.value;
+    $("#bowlUnit").textContent = bowlFieldUnit || "oz";
+    updateUnitNames();
+    if (convert && catFormBase) {
+      const k = unitFactor(catFormBase.unit, f.unit.value, formWeights());
+      if (k) {
+        f.target.value = fmtField(catFormBase.target * k);
+        f.kcal.value = fmtField(catFormBase.kcal / k);
+      }
+    }
+  }
+  const rebase = () => {
+    const f = cf();
+    catFormBase = { unit: f.unit.value, target: parseFloat(f.target.value) || 0, kcal: parseFloat(f.kcal.value) || 0 };
+  };
+  ["method", "unit", "pouchWeight", "pouchWeightUnit", "cupWeight", "cupWeightUnit"].forEach(n =>
+    cf()[n].addEventListener(n.endsWith("Weight") ? "input" : "change", () => syncCatForm()));
+  ["target", "kcal"].forEach(n => cf()[n].addEventListener("input", rebase));
   function openCatDlg(cat) {
     const dlg = $("#catDlg"), f = $("#catForm");
     f.reset();
@@ -1332,10 +1685,22 @@
     if (cat) {
       f.elements.name.value = cat.name; f.elements.unit.value = cat.unit; f.elements.target.value = cat.target || "";
       f.elements.kcal.value = cat.kcal || ""; f.elements.treatKcal.value = cat.treatKcal || ""; f.elements.kibbleKcal.value = cat.kibbleKcal || ""; f.elements.weight.value = cat.weight || "";
-      f.elements.weightUnit.value = cat.weightUnit || "lb"; f.elements.factor.value = String(cat.factor || 1.2);
+      f.elements.weightUnit.value = cat.weightUnit || "lb"; // match by number: the saved 1 has to select the "1.0" option
+      const fac = cat.factor || 1.2;
+      f.elements.factor.value = [...f.elements.factor.options].find(o => parseFloat(o.value) === fac)?.value || "1.2";
       f.elements.dayStart.value = String(cat.dayStart || 0);
+      f.elements.method.value = cat.method || "eyeball";
+      for (const [u, name] of WEIGHT_FIELDS) {
+        const g = (cat.unitWeights || {})[u];
+        const wu = (cat.unitWeights || {})[u + "Unit"] || "oz";
+        f.elements[name + "Unit"].value = wu;
+        f.elements[name].value = g ? fmtField(g / GRAMS[wu]) : "";
+      }
     }
-    updateUnitNames();
+    bowlFieldUnit = isWeightUnit(f.elements.unit.value) ? f.elements.unit.value : "oz";
+    f.elements.bowlWeight.value = cat && cat.bowlG ? fmtField(cat.bowlG / GRAMS[bowlFieldUnit]) : "";
+    rebase();
+    syncCatForm(false);
     dlg.showModal();
     f.elements.name.focus();
   }
@@ -1352,8 +1717,13 @@
       weight: parseFloat(f.elements.weight.value) || 0,
       weightUnit: f.elements.weightUnit.value,
       factor: parseFloat(f.elements.factor.value) || 1.2,
-      dayStart: parseInt(f.elements.dayStart.value, 10) || 0
+      dayStart: parseInt(f.elements.dayStart.value, 10) || 0,
+      method: f.elements.method.value,
+      unitWeights: formWeights(),
+      bowlG: (parseFloat(f.elements.bowlWeight.value) || 0) * GRAMS[bowlFieldUnit || "oz"]
     };
+    // remember which unit each weight was typed in, so the form shows it the same way next time
+    for (const [u, name] of WEIGHT_FIELDS) if (fields.unitWeights[u]) fields.unitWeights[u + "Unit"] = f.elements[name + "Unit"].value;
     if (editingCatId) {
       Object.assign(state.cats.find(c => c.id === editingCatId), fields);
     } else {
@@ -1381,27 +1751,17 @@
   const fullDate = key => keyDate(key).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
 
   function dailyTotalsBetween(cat, rows, startKey, endKey) {
+    const R = refKcal(cat);
     const map = {};
     for (const r of rows) {
       const k = catDay(r.t);
       if (k < startKey || k > endKey) continue;
-      map[k] = map[k] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
-      map[k].events++;
-      if (r.type === "feed") { map[k].given += r.amount; map[k].feeds++; }
-      if (r.eaten != null) { map[k].eaten += r.eaten; map[k].measurements++; }
+      map[k] = map[k] || emptyDay();
+      addRow(map[k], r);
     }
     const out = [];
     for (let key = startKey, guard = 0; key <= endKey && guard < 10000; key = shiftDayKey(key, 1), guard++) {
-      const base = map[key] || { given: 0, eaten: 0, feeds: 0, events: 0, measurements: 0 };
-      const treats = (cat.treats || {})[key] || 0;
-      const kibbles = (cat.kibbles || {})[key] || 0;
-      const treatK = treats * (cat.treatKcal || 0);
-      const kibbleK = kibbles * (cat.kibbleKcal || 0);
-      const treatU = cat.kcal ? treatK / cat.kcal : 0;
-      const kibbleU = cat.kcal ? kibbleK / cat.kcal : 0;
-      const activity = base.events > 0 || treats > 0 || kibbles > 0;
-      const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
-      out.push({ key, date: keyDate(key), ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, activity, intakeKnown });
+      out.push(finishDay(cat, key, keyDate(key), map[key] || emptyDay(), R));
     }
     return out;
   }
@@ -1429,7 +1789,7 @@
   function reportEventText(r, cat, includeGiven = true) {
     const parts = [];
     if (r.type === "feed") {
-      if (includeGiven) parts.push(`Added ${fmt(r.amount, cat)}`);
+      if (includeGiven) parts.push((r.after != null ? `Filled bowl to ${fmt(r.after, cat)} (added ${fmt(r.amount, cat)})` : `Added ${fmt(r.amount, cat)}`) + (r.foodName ? ` of ${r.foodName}` : ""));
       if (r.leftover != null) parts.push(`${fmt(r.leftover, cat)} left before feeding`);
       if (r.eaten != null) parts.push(`${fmt(r.eaten, cat)} eaten since previous measurement`);
       if (r.discarded) parts.push(`${fmt(r.discarded, cat)} discarded`);
@@ -1447,12 +1807,12 @@
     const logged = days.filter(d => d.activity);
     const n = logged.length;
     const foodDays = days.filter(d => d.events > 0);
-    const kpu = cat.kcal || 0;
+    const kpu = refKcal(cat);
     const need = kcalNeed(cat);
     const totalFood = foodDays.reduce((a, d) => a + d.eaten, 0);
     const totalTreats = logged.reduce((a, d) => a + d.treats, 0);
     const totalKibbles = logged.reduce((a, d) => a + d.kibbles, 0);
-    const totalKcal = logged.reduce((a, d) => a + d.eaten * kpu + d.treatK + d.kibbleK, 0);
+    const totalKcal = logged.reduce((a, d) => a + d.eatenK + d.treatK + d.kibbleK, 0);
     const avgFood = foodDays.length ? totalFood / foodDays.length : 0;
     const avgKcal = n && (kpu || cat.treatKcal || cat.kibbleKcal) ? totalKcal / n : 0;
     const hasKcal = !!(kpu || cat.treatKcal || cat.kibbleKcal);
@@ -1461,6 +1821,8 @@
     if (opts.target && cat.target) lines.push({ v: cat.target, color: "var(--bowl)", dash: "6 4" });
     if (opts.need && need && kpu) lines.push({ v: need / kpu, color: "var(--danger)", dash: "2 3" });
     const ax = { unit: unitPlural(cat.unit), k: kpu };
+    const usedFoods = [...new Set(rows.filter(r => r.food && catDay(r.t) >= opts.start && catDay(r.t) <= opts.end).map(r => r.food))].map(foodById).filter(Boolean);
+    const reportFoods = usedFoods.map(f => `${f.name} (${round(f.kcal).toLocaleString()} kcal/${perLabel(f.per)})`).join(", ");
     const generated = new Date().toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
     const stats = [
@@ -1490,7 +1852,7 @@
     const kcalCol = hasKcal ? `<th>Total kcal</th>` : "";
     const givenCol = opts.given ? `<th>Given / offered</th>` : "";
     const tableRows = days.map(d => {
-      const dayKcal = d.eaten * kpu + d.treatK + d.kibbleK;
+      const dayKcal = d.eatenK + d.treatK + d.kibbleK;
       return `<tr>
         <td>${esc(d.date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }))}</td>
         <td>${d.events ? esc(fmt(d.eaten, cat)) : "—"}</td>
@@ -1536,7 +1898,7 @@
     return `<div class="report-head">
         <h1>${esc(cat.name)} — food intake report</h1>
         <p>${esc(fullDate(opts.start))} through ${esc(fullDate(opts.end))} · generated ${esc(generated)}</p>
-        <p>Recorded weight: ${esc(weight)}${cat.kcal ? ` · Food energy: ${round(cat.kcal).toLocaleString()} kcal per ${esc(unitSingular(cat.unit))}` : ""}</p>
+        <p>Recorded weight: ${esc(weight)}${reportFoods ? ` · Foods: ${esc(reportFoods)}` : cat.kcal ? ` · Food energy: ${round(cat.kcal).toLocaleString()} kcal per ${esc(unitSingular(cat.unit))}` : ""}</p>
       </div>
       <div class="report-summary">${stats}</div>
       ${chart}
@@ -1603,7 +1965,7 @@
       const data = JSON.parse(await file.text());
       if (!data || !Array.isArray(data.cats)) throw new Error("not a backup");
       if (!confirm("Replace everything in this browser with the backup?")) return;
-      state = data; save(); render();
+      state = migrate(data); save(); render();
     } catch {
       alert("That file isn't a backup from this app. Choose a .json file made with “Download backup”.");
     }
