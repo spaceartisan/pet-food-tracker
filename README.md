@@ -1,6 +1,6 @@
 # pet-food-tracker
 
-Track how much your pet eats per day, including bowl measurements, treats, counted kibble, and appetite observations.
+Track how much your pet eats per day, including bowl measurements, treats, and appetite observations.
 
 The app runs entirely in the browser and is suitable for GitHub Pages. Data is stored locally in the browser; use **Download backup** for JSON backups.
 
@@ -11,6 +11,10 @@ Each pet can use **Eyeball estimates** (log roughly how much you add and what's 
 ## Foods
 
 Save each food under **Foods** with its calories (per can, cup, oz or kg, plus the can's net weight if you weigh). Pick the food when adding it to the bowl; the last one used is preselected. Calories follow what's actually in the bowl, so topping up one food with another counts each at its own value. Removing a food keeps it on past feedings.
+
+## Treats
+
+Add treat types under **Foods** (name and calories per treat). Each gets its own +/− counter on the main screen, and counts are kept per pet and per day. History shows each day's treats by name, and the vet report lists the treat types used. (Counted kibble is now just another treat type; older kibble counts are moved into a "Kibble" treat automatically.)
 
 ## Appetite tracking
 

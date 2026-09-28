@@ -355,18 +355,15 @@
   </form>
 </dialog>
 
-<!-- Daily treats / kibble -->
+<!-- Daily treats -->
 <dialog id="extrasDlg">
   <form method="dialog" id="extrasForm">
-    <h2>Edit treats &amp; kibble</h2>
+    <h2>Edit treats</h2>
     <label>Day
       <span class="hint">Choose the feeding day you want to correct.</span>
       <input type="date" name="date" required>
     </label>
     <div id="treatFields"></div>
-    <label>Kibbles
-      <input type="number" name="kibbles" min="0" step="1" inputmode="numeric">
-    </label>
     <div class="dialog-actions">
       <button type="button" class="btn plain" data-close>Cancel</button>
       <button type="submit" class="btn">Save counts</button>
@@ -453,7 +450,7 @@
       <label class="check"><input type="checkbox" name="appetite" checked> Appetite notes / ratings</label>
       <label class="check"><input type="checkbox" name="details" checked> Detailed feeding / weigh-in log</label>
     </fieldset>
-    <span class="hint">Treats and counted kibble are always included because they contribute to recorded intake.</span>
+    <span class="hint">Treats are always included because they contribute to recorded intake.</span>
     <div class="dialog-actions">
       <button type="button" class="btn plain" data-close>Cancel</button>
       <button type="submit" class="btn">Print / Save as PDF</button>
@@ -589,10 +586,6 @@
       <span class="hint">Optional. Used for treats with no type. You can set up treat types under Foods instead.</span>
       <input type="number" name="treatKcal" min="0" step="any" inputmode="decimal">
     </label>
-    <label>Estimated calories per kibble (kcal)
-      <span class="hint">Optional. Use an estimate for one individual piece of kibble. Counted kibble is added to calorie totals and charts.</span>
-      <input type="number" name="kibbleKcal" min="0" step="any" inputmode="decimal">
-    </label>
     <label>Cat's weight
       <span class="hint">Optional. Used to estimate daily calorie needs.</span>
       <div class="row">
@@ -687,6 +680,27 @@
     }
     data.foods = data.foods || [];
     data.treatTypes = data.treatTypes || [];
+    // Kibble used to have its own counter. Move any counts into a "Kibble" treat type
+    // (one per calorie value), so history and calories carry over.
+    for (const c of data.cats || []) {
+      const counts = Object.entries(c.kibbles || {}).filter(([, n]) => n > 0);
+      if (counts.length) {
+        const kcal = c.kibbleKcal || 0;
+        let t = data.treatTypes.find(x => x.fromKibble && x.kcal === kcal);
+        if (!t) {
+          const clash = data.treatTypes.some(x => x.fromKibble);
+          t = { id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36), name: clash ? `Kibble (${kcal} kcal)` : "Kibble", kcal, fromKibble: true };
+          data.treatTypes.push(t);
+        }
+        c.treatLog = c.treatLog || {};
+        for (const [k, n] of counts) {
+          const day = c.treatLog[k] = c.treatLog[k] || {};
+          day[t.id] = (day[t.id] || 0) + n;
+        }
+      }
+      delete c.kibbles;
+      delete c.kibbleKcal;
+    }
     return data;
   }
 
@@ -777,7 +791,7 @@
   }
   const appetiteLabels = { normal: "Normal", reduced: "Reduced", poor: "Poor", refused: "Refused food", increased: "Increased" };
   const appetiteLabel = value => appetiteLabels[value] || "";
-  const dayIntake = d => d.eatenU + d.treatU + d.kibbleU;
+  const dayIntake = d => d.eatenU + d.treatU;
 
   // ---------- Core calculation ----------
   // Walks events in time order, tracking the estimated amount in the bowl.
@@ -830,22 +844,19 @@
     if (r.type === "feed") { day.given += r.amount; day.givenK += r.givenK || 0; day.feeds++; }
     if (r.eaten != null) { day.eaten += r.eaten; day.eatenK += r.eatenK || 0; day.measurements++; }
   }
-  // Adds treats/kibble and the "U" values charts use. U values are calories expressed in the cat's
+  // Adds treats and the "U" values charts use. U values are calories expressed in the cat's
   // food unit at the reference calories (R), so the kcal axis is exact even when foods differ.
   function finishDay(cat, key, date, base, R) {
     const tr = treatsOn(cat, key);
     const treats = tr.n, treatParts = tr.parts;
-    const kibbles = (cat.kibbles || {})[key] || 0;
     const treatK = tr.kcal;
-    const kibbleK = kibbles * (cat.kibbleKcal || 0);
     const treatU = R ? treatK / R : 0;
-    const kibbleU = R ? kibbleK / R : 0;
     const eatenU = R ? base.eatenK / R : base.eaten;
     const givenU = R ? base.givenK / R : base.given;
     // Activity records that something was logged; intakeKnown is stricter for appetite analytics.
-    const activity = base.events > 0 || treats > 0 || kibbles > 0;
-    const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
-    return { key, date, ...base, treats, treatParts, kibbles, treatK, kibbleK, treatU, kibbleU, eatenU, givenU, activity, intakeKnown };
+    const activity = base.events > 0 || treats > 0;
+    const intakeKnown = base.measurements > 0 || treatU > 0;
+    return { key, date, ...base, treats, treatParts, treatK, treatU, eatenU, givenU, activity, intakeKnown };
   }
 
   function dailyTotals(cat, rows, days) {
@@ -972,13 +983,12 @@
       const x = padL + i * bw;
       const gw = bw * 0.7, ew = bw * 0.44;
       const gx = x + (bw - gw) / 2, ex = x + (bw - ew) / 2;
-      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amtK(d.given, d.givenK, ax)}, ` : ""}eaten ${amtK(d.eaten, d.eatenK, ax)}${d.treats ? `, plus ${treatSummary(d.treatParts)}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
+      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amtK(d.given, d.givenK, ax)}, ` : ""}eaten ${amtK(d.eaten, d.eatenK, ax)}${d.treats ? `, plus ${treatSummary(d.treatParts)}` : ""}`;
       s += `<g><title>${esc(tip)}</title>`;
       const e = d.eatenU;
       if (includeGiven) s += `<rect x="${gx}" y="${y(d.givenU)}" width="${gw}" height="${Math.max(0, y(0) - y(d.givenU))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
       s += `<rect x="${ex}" y="${y(e)}" width="${ew}" height="${Math.max(0, y(0) - y(e))}" rx="3" fill="var(--eaten)"/>`;
       if (d.treatU > 0) s += `<rect x="${ex}" y="${y(e + d.treatU)}" width="${ew}" height="${Math.max(0, y(e) - y(e + d.treatU))}" rx="2" fill="var(--treat)"/>`;
-      if (d.kibbleU > 0) s += `<rect x="${ex}" y="${y(e + d.treatU + d.kibbleU)}" width="${ew}" height="${Math.max(0, y(e + d.treatU) - y(e + d.treatU + d.kibbleU))}" rx="2" fill="var(--piece)"/>`;
       const total = dayIntake(d);
       if (opts.baseline && d.intakeKnown && d.key !== catDay(Date.now()) && total < opts.baseline * (opts.lowThreshold || 0.75)) {
         s += `<rect x="${ex - 2}" y="${y(total) - 2}" width="${ew + 4}" height="${Math.max(4, y(0) - y(total) + 4)}" rx="4" fill="none" stroke="var(--danger)" stroke-width="2"/>`;
@@ -1130,8 +1140,8 @@
     const need = kcalNeed(cat);
     const targetKcal = cat.target && kpu ? cat.target * kpu : 0;
     const activeWeek = week.filter(d => d.activity);
-    const weekKcalAvg = activeWeek.reduce((a, d) => a + d.eatenK + d.treatK + d.kibbleK, 0) / daysWithData;
-    const todayKcal = today.eatenK + today.treatK + today.kibbleK;
+    const weekKcalAvg = activeWeek.reduce((a, d) => a + d.eatenK + d.treatK, 0) / daysWithData;
+    const todayKcal = today.eatenK + today.treatK;
     // one counter per treat type; the plain "Treats" counter shows when there are no types, or it already has a count today
     const todayKey = catDay(Date.now());
     const types = activeTreatTypes();
@@ -1176,7 +1186,6 @@
           <span><i style="background:var(--kibble);opacity:.5"></i>Given</span>
           <span><i style="background:var(--eaten)"></i>Eaten</span>
           ${days.some(d => d.treatU > 0) ? `<span><i style="background:var(--treat)"></i>Treats</span>` : ""}
-          ${days.some(d => d.kibbleU > 0) ? `<span><i style="background:var(--piece)"></i>Counted kibble</span>` : ""}
           ${baseline.value && days.some(d => d.intakeKnown && d.key !== catDay(Date.now()) && dayIntake(d) < baseline.value * baseline.threshold) ? `<span>${lineKey("var(--danger)", "6 4")}Below ${Math.round(baseline.threshold * 100)}% baseline</span>` : ""}
           ${refLegend()}
         </div>${calorieNote}`;
@@ -1202,7 +1211,7 @@
     };
 
     // History grouped by feeding day, newest first. Include extras-only days so
-    // treats/kibble can be corrected even when no bowl event happened that day.
+    // treats can be corrected even when no bowl event happened that day.
     const recent = [...rows].reverse().slice(0, 60);
     const groupMap = new Map();
     const ensureGroup = k => {
@@ -1212,7 +1221,6 @@
     for (const r of recent) ensureGroup(catDay(r.t)).items.push(r);
     for (const k of Object.keys(cat.treats || {})) if ((cat.treats[k] || 0) > 0) ensureGroup(k);
     for (const k of Object.keys(cat.treatLog || {})) ensureGroup(k);
-    for (const k of Object.keys(cat.kibbles || {})) if ((cat.kibbles[k] || 0) > 0) ensureGroup(k);
     for (const [k, a] of Object.entries(cat.appetite || {})) if (a && (a.rating || a.note)) ensureGroup(k);
     const groups = [...groupMap.values()].sort((a, b) => b.key.localeCompare(a.key)).slice(0, 60);
     const historyDays = groups.length ? dailyTotalsBetween(cat, rows, groups[groups.length - 1].key, groups[0].key) : [];
@@ -1265,19 +1273,12 @@
             <button class="cbtn treat" data-treat-plus="${t.id}" aria-label="One more ${esc(t.label)}">+</button>
             ${t.kcalEach ? `<small>${round(t.n * t.kcalEach).toLocaleString()} kcal</small>` : ""}
           </div>`).join("")}
-          <div class="counter-row">
-            <span>Kibbles today</span>
-            <button class="cbtn kibble-piece" id="kibbleMinus" aria-label="One less kibble" ${today.kibbles ? "" : "disabled"}>−</button>
-            <b aria-live="polite">${today.kibbles}</b>
-            <button class="cbtn kibble-piece" id="kibblePlus" aria-label="One more kibble">+</button>
-            ${cat.kibbleKcal ? `<small>${round(today.kibbleK).toLocaleString()} kcal</small>` : ""}
-          </div>
         </div>
       </div>
 
       <div class="stats">
         <div class="stat"><b>${fmt(today.eaten, cat)}</b>
-          <span>eaten today${kpu ? ` (${Math.round(todayKcal).toLocaleString()}${need ? ` of ~${Math.round(need)}` : ""} kcal${today.treatK || today.kibbleK ? ", with extras" : ""})` : ""}</span>
+          <span>eaten today${kpu ? ` (${Math.round(todayKcal).toLocaleString()}${need ? ` of ~${Math.round(need)}` : ""} kcal${today.treatK ? ", with treats" : ""})` : ""}</span>
           ${progress}
         </div>
         <div class="stat"><b>${fmt(today.given, cat)}</b>
@@ -1295,7 +1296,7 @@
         </div>
         <div class="analytics-grid">${analyticsCards}</div>
         <div class="baseline-summary${low14 ? " low" : ""}">${baselineText}</div>
-        <p class="panel-note">Averages use completed days with measurable intake only; an unlogged or unmeasured day is not treated as zero. Treats and counted kibble are included when calories per food unit are configured.</p>
+        <p class="panel-note">Averages use completed days with measurable intake only; an unlogged or unmeasured day is not treated as zero. Treats are included when calories are configured.</p>
       </section>
 
       <section class="panel">
@@ -1318,15 +1319,14 @@
           <div class="history-actions">
             <button class="ghost" id="historyAddFeed">+ Add food</button>
             <button class="ghost" id="historyAddCheck">+ Add leftovers</button>
-            <button class="ghost" id="editDailyCounts">+ Add/edit treats &amp; kibble</button>
+            <button class="ghost" id="editDailyCounts">+ Add/edit treats</button>
             <button class="ghost" id="editAppetite">+ Add/edit appetite</button>
           </div>
         </div>
         ${groups.length ? groups.map(g => {
           const treats = treatsOn(cat, g.key);
-          const kibbles = (cat.kibbles || {})[g.key] || 0;
           const appetite = (cat.appetite || {})[g.key] || null;
-          const extras = treats.n || kibbles ? extrasHTML(g.key, treats, kibbles, cat) : "";
+          const extras = treats.n ? extrasHTML(g.key, treats) : "";
           const appetiteEntry = appetite && (appetite.rating || appetite.note) ? appetiteHTML(g.key, appetite) : "";
           const hd = historyDayMap.get(g.key);
           const low = !!(baseline.value && hd && hd.intakeKnown && g.key !== catDay(Date.now()) && dayIntake(hd) < baseline.value * baseline.threshold);
@@ -1338,7 +1338,7 @@
               <div class="day-actions">
                 <button class="day-edit" data-add-feed="${g.key}">+ Food</button>
                 <button class="day-edit" data-add-check="${g.key}">+ Leftovers</button>
-                <button class="day-edit" data-edit-extras="${g.key}">Edit treats &amp; kibble</button>
+                <button class="day-edit" data-edit-extras="${g.key}">Edit treats</button>
                 <button class="day-edit" data-edit-appetite="${g.key}">Edit appetite</button>
               </div>
             </div>
@@ -1400,8 +1400,6 @@
     };
     app.querySelectorAll("[data-treat-plus]").forEach(b => b.onclick = () => bumpTreat(b.dataset.treatPlus, 1));
     app.querySelectorAll("[data-treat-minus]").forEach(b => b.onclick = () => bumpTreat(b.dataset.treatMinus, -1));
-    $("#kibblePlus").onclick = () => bumpDailyCount("kibbles", 1);
-    $("#kibbleMinus").onclick = () => bumpDailyCount("kibbles", -1);
     $("#feedBtn").onclick = () => openEntryDlg("#feedDlg");
     $("#checkBtn").onclick = () => openEntryDlg("#checkDlg");
     $("#reportBtn").onclick = openReportDlg;
@@ -1441,15 +1439,14 @@
     </div>`;
   }
 
-  function extrasHTML(key, treats, kibbles, cat) {
+  function extrasHTML(key, treats) {
     const detail = [];
     if (treats.n) detail.push(esc(treatSummary(treats.parts)));
-    if (kibbles) detail.push(`${kibbles} kibble${kibbles === 1 ? "" : "s"}${cat.kibbleKcal ? ` (${round(kibbles * cat.kibbleKcal).toLocaleString()} kcal)` : ""}`);
-    const totalKcal = treats.kcal + kibbles * (cat.kibbleKcal || 0);
+    const totalKcal = treats.kcal;
     return `<div class="entry extras-entry">
       <span class="dot"></span>
       <div class="txt">Daily extras<small>${detail.join(", ")}${totalKcal ? ` · ${round(totalKcal).toLocaleString()} kcal total` : ""}</small></div>
-      <button data-edit-extras="${key}" aria-label="Edit treats and kibble for ${esc(dayLabel(key))}">Edit</button>
+      <button data-edit-extras="${key}" aria-label="Edit treats for ${esc(dayLabel(key))}">Edit</button>
     </div>`;
   }
 
@@ -1485,7 +1482,6 @@
       $("#treatFields").innerHTML = fields.map(t => `<label>${esc(t.label)}
         <input type="number" data-treat-id="${t.id}" min="0" step="1" inputmode="numeric" value="${treatCount(cat, k, t.id) || ""}">
       </label>`).join("");
-      f.elements.kibbles.value = (cat.kibbles || {})[k] || "";
     };
     loadCounts();
     f.elements.date.onchange = loadCounts;
@@ -1496,10 +1492,7 @@
   $("#extrasForm").addEventListener("submit", e => {
     const f = e.target, cat = activeCat(), k = f.elements.date.value;
     if (!k) { e.preventDefault(); return; }
-    const kibbles = Math.max(0, Math.floor(Number(f.elements.kibbles.value) || 0));
     $("#treatFields").querySelectorAll("[data-treat-id]").forEach(inp => setTreatCount(cat, k, inp.dataset.treatId, Number(inp.value)));
-    cat.kibbles = cat.kibbles || {};
-    if (kibbles) cat.kibbles[k] = kibbles; else delete cat.kibbles[k];
     save(); render();
   });
 
@@ -1871,7 +1864,7 @@
     $("#deleteCatBtn").hidden = !cat;
     if (cat) {
       f.elements.name.value = cat.name; f.elements.unit.value = cat.unit; f.elements.target.value = cat.target || "";
-      f.elements.kcal.value = cat.kcal || ""; f.elements.treatKcal.value = cat.treatKcal || ""; f.elements.kibbleKcal.value = cat.kibbleKcal || ""; f.elements.weight.value = cat.weight || "";
+      f.elements.kcal.value = cat.kcal || ""; f.elements.treatKcal.value = cat.treatKcal || ""; f.elements.weight.value = cat.weight || "";
       f.elements.weightUnit.value = cat.weightUnit || "lb"; // match by number: the saved 1 has to select the "1.0" option
       const fac = cat.factor || 1.2;
       f.elements.factor.value = [...f.elements.factor.options].find(o => parseFloat(o.value) === fac)?.value || "1.2";
@@ -1900,7 +1893,6 @@
       target: parseFloat(f.elements.target.value) || 0,
       kcal: parseFloat(f.elements.kcal.value) || 0,
       treatKcal: parseFloat(f.elements.treatKcal.value) || 0,
-      kibbleKcal: parseFloat(f.elements.kibbleKcal.value) || 0,
       weight: parseFloat(f.elements.weight.value) || 0,
       weightUnit: f.elements.weightUnit.value,
       factor: parseFloat(f.elements.factor.value) || 1.2,
@@ -1998,11 +1990,10 @@
     const need = kcalNeed(cat);
     const totalFood = foodDays.reduce((a, d) => a + d.eaten, 0);
     const totalTreats = logged.reduce((a, d) => a + d.treats, 0);
-    const totalKibbles = logged.reduce((a, d) => a + d.kibbles, 0);
-    const totalKcal = logged.reduce((a, d) => a + d.eatenK + d.treatK + d.kibbleK, 0);
+    const totalKcal = logged.reduce((a, d) => a + d.eatenK + d.treatK, 0);
     const avgFood = foodDays.length ? totalFood / foodDays.length : 0;
-    const avgKcal = n && (kpu || cat.treatKcal || cat.kibbleKcal) ? totalKcal / n : 0;
-    const hasKcal = !!(kpu || cat.treatKcal || cat.kibbleKcal);
+    const avgKcal = n && (kpu || cat.treatKcal || (cat.treatLog && Object.keys(cat.treatLog).length)) ? totalKcal / n : 0;
+    const hasKcal = !!(kpu || cat.treatKcal || (cat.treatLog && Object.keys(cat.treatLog).length));
     const weight = cat.weight ? `${round(cat.weight).toLocaleString()} ${cat.weightUnit || "lb"}` : "Not entered";
     const lines = [];
     if (opts.target && cat.target) lines.push({ v: cat.target, color: "var(--bowl)", dash: "6 4" });
@@ -2022,7 +2013,6 @@
       opts.need && need ? `<div class="report-stat"><b>~${Math.round(need).toLocaleString()} kcal</b><span>estimated daily need</span></div>` : "",
       opts.target && cat.target ? `<div class="report-stat"><b>${fmt(cat.target, cat)}${kpu ? ` · ${Math.round(cat.target * kpu).toLocaleString()} kcal` : ""}</b><span>daily target</span></div>` : "",
       totalTreats ? `<div class="report-stat"><b>${totalTreats.toLocaleString()}</b><span>treats in report period</span></div>` : "",
-      totalKibbles ? `<div class="report-stat"><b>${totalKibbles.toLocaleString()}</b><span>counted kibble pieces in report period</span></div>` : ""
     ].filter(Boolean).join("");
 
     let chart = "";
@@ -2032,7 +2022,6 @@
           ${opts.given ? `<span><i style="background:var(--kibble);opacity:.35"></i>Food given / offered</span>` : ""}
           <span><i style="background:var(--eaten)"></i>Measured food eaten</span>
           ${days.some(d => d.treats) ? `<span><i style="background:var(--treat)"></i>Treats</span>` : ""}
-          ${days.some(d => d.kibbles) ? `<span><i style="background:var(--piece)"></i>Counted kibble</span>` : ""}
           ${opts.target && cat.target ? `<span>${lineKey("var(--bowl)", "6 4")}Daily target</span>` : ""}
           ${opts.need && need && kpu ? `<span>${lineKey("var(--danger)", "2 3")}Estimated need</span>` : ""}
         </div></section>`;
@@ -2041,19 +2030,18 @@
     const kcalCol = hasKcal ? `<th>Total kcal</th>` : "";
     const givenCol = opts.given ? `<th>Given / offered</th>` : "";
     const tableRows = days.map(d => {
-      const dayKcal = d.eatenK + d.treatK + d.kibbleK;
+      const dayKcal = d.eatenK + d.treatK;
       return `<tr>
         <td>${esc(d.date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }))}</td>
         <td>${d.events ? esc(fmt(d.eaten, cat)) : "—"}</td>
         ${givenCol ? `<td>${d.events ? esc(fmt(d.given, cat)) : "—"}</td>` : ""}
         <td>${d.treats || "—"}</td>
-        <td>${d.kibbles || "—"}</td>
         ${hasKcal ? `<td>${d.activity ? Math.round(dayKcal).toLocaleString() : "—"}</td>` : ""}
       </tr>`;
     }).join("");
     const dailyLog = opts.daily ? `<section class="report-section"><h2>Daily log</h2>
-        <table class="report-table"><thead><tr><th>Date</th><th>Food eaten</th>${givenCol}<th>Treats</th><th>Kibble pieces</th>${kcalCol}</tr></thead><tbody>${tableRows}</tbody></table>
-        <p class="report-note">“Food eaten” is calculated from bowl measurements. Treats and counted kibble are logged separately and, when per-item calories are configured, are included in Total kcal. Blank days indicate no logged activity.</p>
+        <table class="report-table"><thead><tr><th>Date</th><th>Food eaten</th>${givenCol}<th>Treats</th>${kcalCol}</tr></thead><tbody>${tableRows}</tbody></table>
+        <p class="report-note">“Food eaten” is calculated from bowl measurements. Treats are logged separately and, when their calories are configured, are included in Total kcal. Blank days indicate no logged activity.</p>
       </section>` : "";
 
     const appetiteRows = opts.appetite ? days.map(d => {
@@ -2129,7 +2117,7 @@
   // ---------- Backup ----------
   // Data only lives in this browser, so nudge toward a backup every 30 days.
   function backupNote() {
-    if (!state.cats.some(c => c.events.length || Object.keys(c.treats || {}).length || Object.keys(c.treatLog || {}).length || Object.keys(c.kibbles || {}).length || Object.keys(c.appetite || {}).length)) return "";
+    if (!state.cats.some(c => c.events.length || Object.keys(c.treats || {}).length || Object.keys(c.treatLog || {}).length || Object.keys(c.appetite || {}).length)) return "";
     const last = state.lastBackup;
     if (!last || Date.now() - last > 30 * 864e5) {
       return `<p class="backup-warn"><b>Last backup: ${last ? ago(last) : "never"}.</b> Your log is only saved in this browser, so download a backup now and then.</p>`;
