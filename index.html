@@ -179,11 +179,20 @@
   textarea { resize: vertical; min-height: 84px; }
   [hidden] { display: none !important; }
   .top-actions { display: flex; gap: 2px; }
+  h2.list-head { margin-top: 18px; }
+  #treatList .empty { padding: 4px 0 8px; }
   .food-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
   .food-item .txt { flex: 1; min-width: 0; }
   .food-item .txt small { display: block; color: var(--muted); }
   #foodList .empty { padding: 4px 0 8px; }
   p.scale-note { margin: -4px 0 12px; }
+  .preview { background: var(--paper); border-radius: 10px; padding: 8px 12px; margin-top: 4px; font-size: .9rem; }
+  .preview:empty { display: none; }
+  .preview div { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .preview div span { color: var(--muted); }
+  .preview div b { text-align: right; }
+  .preview div.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; font-weight: 800; }
+  .hero .reading { font-size: .9rem; margin-top: 2px; }
   form[data-mode="eyeball"] .mode-scale, form[data-mode="scale"] .mode-eyeball { display: none; }
   .baseline-range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   @media (max-width: 560px) {
@@ -317,6 +326,7 @@
       <span class="hint">Leave blank to use the current time. You can change it later from History.</span>
       <input type="datetime-local" name="time">
     </label>
+    <div class="preview" id="feedPreview" aria-live="polite"></div>
     <div class="dialog-actions">
       <button type="button" class="btn plain" data-close>Cancel</button>
       <button type="submit" class="btn feed" id="feedSubmit">Add food</button>
@@ -337,6 +347,7 @@
       <span class="hint">Leave blank to use the current time. You can change it later from History.</span>
       <input type="datetime-local" name="time">
     </label>
+    <div class="preview" id="checkPreview" aria-live="polite"></div>
     <div class="dialog-actions">
       <button type="button" class="btn plain" data-close>Cancel</button>
       <button type="submit" class="btn">Save</button>
@@ -352,9 +363,7 @@
       <span class="hint">Choose the feeding day you want to correct.</span>
       <input type="date" name="date" required>
     </label>
-    <label>Treats
-      <input type="number" name="treats" min="0" step="1" inputmode="numeric">
-    </label>
+    <div id="treatFields"></div>
     <label>Kibbles
       <input type="number" name="kibbles" min="0" step="1" inputmode="numeric">
     </label>
@@ -461,10 +470,37 @@
     <p class="panel-note">Save each food with its calories. When you add food you pick which one, and calories are counted from that food.</p>
     <div id="foodList"></div>
     <div class="dialog-actions">
-      <button type="button" class="btn plain" data-close>Done</button>
       <button type="button" class="btn feed" id="newFoodBtn">Add a food</button>
     </div>
+    <h2 class="list-head">Treats</h2>
+    <p class="panel-note">Each treat gets its own counter on the main screen.</p>
+    <div id="treatList"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn feed" id="newTreatBtn">Add a treat</button>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-close>Done</button>
+    </div>
   </div>
+</dialog>
+
+<dialog id="treatDlg">
+  <form method="dialog" id="treatForm">
+    <h2 id="treatDlgTitle">Add a treat</h2>
+    <label>Name
+      <input type="text" name="name" required maxlength="60" autocomplete="off" placeholder="e.g. Temptations">
+    </label>
+    <label>Calories per treat (kcal)
+      <span class="hint">From the label, often listed per piece.</span>
+      <input type="number" name="kcal" min="0" step="any" required inputmode="decimal">
+    </label>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger" id="deleteTreatBtn" hidden>Remove</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn plain" data-close>Cancel</button>
+      <button type="submit" class="btn">Save treat</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="foodDlg">
@@ -550,7 +586,7 @@
       <input type="number" name="kcal" min="0" step="any" inputmode="decimal">
     </label>
     <label>Calories per treat (kcal)
-      <span class="hint">Optional. Adds treats to the calorie numbers and charts.</span>
+      <span class="hint">Optional. Used for treats with no type. You can set up treat types under Foods instead.</span>
       <input type="number" name="treatKcal" min="0" step="any" inputmode="decimal">
     </label>
     <label>Estimated calories per kibble (kcal)
@@ -650,7 +686,38 @@
       c.unitWeights = c.unitWeights || {};
     }
     data.foods = data.foods || [];
+    data.treatTypes = data.treatTypes || [];
     return data;
+  }
+
+  // ---------- Treats ----------
+  // Treat types are shared by all cats: { id, name, kcal, archived }. Per cat, cat.treatLog[day][typeId] = count.
+  // cat.treats[day] is the older plain count, still used for treats with no type (at cat.treatKcal each).
+  const treatTypeById = id => (state.treatTypes || []).find(t => t.id === id) || null;
+  const activeTreatTypes = () => (state.treatTypes || []).filter(t => !t.archived);
+  function treatsOn(cat, key) {
+    const parts = [];
+    const plain = (cat.treats || {})[key] || 0;
+    if (plain) parts.push({ id: "", name: "Treats", n: plain, kcal: plain * (cat.treatKcal || 0) });
+    for (const [id, n] of Object.entries((cat.treatLog || {})[key] || {})) {
+      const t = treatTypeById(id);
+      if (n > 0) parts.push({ id, name: t ? t.name : "Treat", n, kcal: n * (t ? t.kcal : 0) });
+    }
+    return { parts, n: parts.reduce((a, p) => a + p.n, 0), kcal: parts.reduce((a, p) => a + p.kcal, 0) };
+  }
+  // count for one treat type ("" = plain treats) on a day
+  const treatCount = (cat, key, id) => id ? (((cat.treatLog || {})[key] || {})[id] || 0) : ((cat.treats || {})[key] || 0);
+  function setTreatCount(cat, key, id, n) {
+    n = Math.max(0, Math.floor(n || 0));
+    if (!id) {
+      cat.treats = cat.treats || {};
+      if (n) cat.treats[key] = n; else delete cat.treats[key];
+      return;
+    }
+    cat.treatLog = cat.treatLog || {};
+    const day = cat.treatLog[key] = cat.treatLog[key] || {};
+    if (n) day[id] = n; else delete day[id];
+    if (!Object.keys(day).length) delete cat.treatLog[key];
   }
 
   // ---------- Foods ----------
@@ -751,7 +818,8 @@
         level = remaining;
         if (e.emptied) { discarded = level; level = 0; }
       }
-      rows.push({ ...e, amount, leftover, remaining, after, eaten, eatenK, givenK, discarded, levelAfter: level, foodName: food ? food.name : "" });
+      rows.push({ ...e, amount, leftover, remaining, after, eaten, eatenK, givenK, discarded, levelAfter: level, foodName: food ? food.name : "",
+                  raw: { before: e.leftover, after: e.after, remaining: e.remaining, tare: e.tare || 0, u: e.u || cat.unit } });
     }
     return { rows, level };
   }
@@ -765,9 +833,10 @@
   // Adds treats/kibble and the "U" values charts use. U values are calories expressed in the cat's
   // food unit at the reference calories (R), so the kcal axis is exact even when foods differ.
   function finishDay(cat, key, date, base, R) {
-    const treats = (cat.treats || {})[key] || 0;
+    const tr = treatsOn(cat, key);
+    const treats = tr.n, treatParts = tr.parts;
     const kibbles = (cat.kibbles || {})[key] || 0;
-    const treatK = treats * (cat.treatKcal || 0);
+    const treatK = tr.kcal;
     const kibbleK = kibbles * (cat.kibbleKcal || 0);
     const treatU = R ? treatK / R : 0;
     const kibbleU = R ? kibbleK / R : 0;
@@ -776,7 +845,7 @@
     // Activity records that something was logged; intakeKnown is stricter for appetite analytics.
     const activity = base.events > 0 || treats > 0 || kibbles > 0;
     const intakeKnown = base.measurements > 0 || treatU > 0 || kibbleU > 0;
-    return { key, date, ...base, treats, kibbles, treatK, kibbleK, treatU, kibbleU, eatenU, givenU, activity, intakeKnown };
+    return { key, date, ...base, treats, treatParts, kibbles, treatK, kibbleK, treatU, kibbleU, eatenU, givenU, activity, intakeKnown };
   }
 
   function dailyTotals(cat, rows, days) {
@@ -886,9 +955,10 @@
   }
   const refLinesSVG = (g, lines) => lines.map(l =>
     `<line x1="${g.padL}" x2="${g.W - g.padR}" y1="${g.y(l.v)}" y2="${g.y(l.v)}" stroke="${l.color}" stroke-width="2" stroke-dasharray="${l.dash}" opacity=".75"/>`).join("");
+  const treatSummary = parts => parts.map(p => `${p.n} ${p.id ? p.name : `treat${p.n === 1 ? "" : "s"}`}${p.kcal ? ` (${round(p.kcal).toLocaleString()} kcal)` : ""}`).join(", ");
   // actual amount with its exact calories
-  const amtK = (v, k, ax) => `${round(v).toLocaleString()} ${ax.unit}${ax.k ? ` (${Math.round(k).toLocaleString()} kcal)` : ""}`;
-  const amt = (v, ax) => `${round(v).toLocaleString()} ${ax.unit}${ax.k ? ` (${Math.round(v * ax.k).toLocaleString()} kcal)` : ""}`;
+  const amtK = (v, k, ax) => `${round(v).toLocaleString()} ${unitFor(v, ax.unit)}${ax.k ? ` (${Math.round(k).toLocaleString()} kcal)` : ""}`;
+  const amt = (v, ax) => `${round(v).toLocaleString()} ${unitFor(v, ax.unit)}${ax.k ? ` (${Math.round(v * ax.k).toLocaleString()} kcal)` : ""}`;
 
   // days: [{date, given, eaten}] in food units; ax: {unit, k}; lines: [{v, color, dash}] in food units
   function chartSVG(days, ax, lines = [], label = "Daily chart", opts = {}) {
@@ -902,7 +972,7 @@
       const x = padL + i * bw;
       const gw = bw * 0.7, ew = bw * 0.44;
       const gx = x + (bw - gw) / 2, ex = x + (bw - ew) / 2;
-      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amtK(d.given, d.givenK, ax)}, ` : ""}eaten ${amtK(d.eaten, d.eatenK, ax)}${d.treats ? `, plus ${d.treats} treat${d.treats === 1 ? "" : "s"}${d.treatK ? ` (${Math.round(d.treatK)} kcal)` : ""}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
+      const tip = `${shortDate(d.date)}: ${includeGiven ? `given ${amtK(d.given, d.givenK, ax)}, ` : ""}eaten ${amtK(d.eaten, d.eatenK, ax)}${d.treats ? `, plus ${treatSummary(d.treatParts)}` : ""}${d.kibbles ? `, plus ${d.kibbles} kibble${d.kibbles === 1 ? "" : "s"}${d.kibbleK ? ` (${round(d.kibbleK).toLocaleString()} kcal)` : ""}` : ""}`;
       s += `<g><title>${esc(tip)}</title>`;
       const e = d.eatenU;
       if (includeGiven) s += `<rect x="${gx}" y="${y(d.givenU)}" width="${gw}" height="${Math.max(0, y(0) - y(d.givenU))}" rx="3" fill="var(--kibble)" opacity=".35"/>`;
@@ -1062,6 +1132,13 @@
     const activeWeek = week.filter(d => d.activity);
     const weekKcalAvg = activeWeek.reduce((a, d) => a + d.eatenK + d.treatK + d.kibbleK, 0) / daysWithData;
     const todayKcal = today.eatenK + today.treatK + today.kibbleK;
+    // one counter per treat type; the plain "Treats" counter shows when there are no types, or it already has a count today
+    const todayKey = catDay(Date.now());
+    const types = activeTreatTypes();
+    const treatRows = [
+      ...(!types.length || treatCount(cat, todayKey, "") ? [{ id: "", label: types.length ? "Other treats" : "Treats today", n: treatCount(cat, todayKey, ""), kcalEach: cat.treatKcal || 0 }] : []),
+      ...types.map(t => ({ id: t.id, label: t.name, n: treatCount(cat, todayKey, t.id), kcalEach: t.kcal }))
+    ];
     const baseline = appetiteBaseline(cat, rows);
     const rolling = Object.fromEntries([3, 7, 14, 30].map(n => [n, rollingAppetite(cat, rows, n)]));
     const measure = kpu
@@ -1071,6 +1148,13 @@
     // progress bar: toward calorie need if known, else toward daily target
     const pct = kpu && need ? todayKcal / need : cat.target ? today.eaten / cat.target : null;
     const progress = pct == null ? "" : `<div class="progress" title="${Math.round(pct * 100)}% of ${kpu && need ? "estimated calorie need" : "daily target"}"><i style="width:${Math.min(100, pct * 100)}%"></i></div>`;
+    // most recent scale reading, bowl included, so it can be matched against the scale
+    const lastRow = rows[rows.length - 1];
+    const lastReading = lastRow && lastRow.m === "scale" && lastRow.raw
+      ? (lastRow.type === "check" ? lastRow.raw.remaining : lastRow.raw.after) : null;
+    const heroReading = lastReading != null
+      ? `<p class="reading">Scale read ${round(lastReading).toLocaleString()} ${esc(lastRow.raw.u)}${lastRow.raw.tare ? ` with the bowl (${round(lastRow.raw.tare)} ${esc(lastRow.raw.u)})` : ""} at ${timeStr(lastRow.t)}</p>`
+      : "";
     const capacity = Math.max(level, ...rows.filter(r => r.type === "feed").slice(-10).map(r => r.levelAfter), 1);
 
     const ax = { unit: unitPlural(cat.unit) === "pouches / cans" ? "pouches" : cat.unit, k: kpu };
@@ -1127,6 +1211,7 @@
     };
     for (const r of recent) ensureGroup(catDay(r.t)).items.push(r);
     for (const k of Object.keys(cat.treats || {})) if ((cat.treats[k] || 0) > 0) ensureGroup(k);
+    for (const k of Object.keys(cat.treatLog || {})) ensureGroup(k);
     for (const k of Object.keys(cat.kibbles || {})) if ((cat.kibbles[k] || 0) > 0) ensureGroup(k);
     for (const [k, a] of Object.entries(cat.appetite || {})) if (a && (a.rating || a.note)) ensureGroup(k);
     const groups = [...groupMap.values()].sort((a, b) => b.key.localeCompare(a.key)).slice(0, 60);
@@ -1167,18 +1252,19 @@
         ${bowlSVG(level, capacity)}
         <div>
           <div class="level">${round(level).toLocaleString()} <small>${esc(unitFor(level, cat.unit))} in the bowl${cat.method === "scale" ? "" : " (estimate)"}</small></div>
+          ${heroReading}
           <p>${lastFeed ? `Last fed ${ago(lastFeed.t)} (${fmt(lastFeed.amount, cat)})` : "No feedings logged yet."}</p>
           <div class="actions">
             <button class="btn feed" id="feedBtn">Add food</button>
             <button class="btn check" id="checkBtn">${cat.method === "scale" ? "Weigh bowl" : "Weigh leftovers"}</button>
           </div>
-          <div class="counter-row">
-            <span>Treats today</span>
-            <button class="cbtn treat" id="treatMinus" aria-label="One less treat" ${today.treats ? "" : "disabled"}>−</button>
-            <b aria-live="polite">${today.treats}</b>
-            <button class="cbtn treat" id="treatPlus" aria-label="One more treat">+</button>
-            ${cat.treatKcal ? `<small>${num(today.treatK, true)} kcal</small>` : ""}
-          </div>
+          ${treatRows.map(t => `<div class="counter-row">
+            <span>${esc(t.label)}</span>
+            <button class="cbtn treat" data-treat-minus="${t.id}" aria-label="One less ${esc(t.label)}" ${t.n ? "" : "disabled"}>−</button>
+            <b aria-live="polite">${t.n}</b>
+            <button class="cbtn treat" data-treat-plus="${t.id}" aria-label="One more ${esc(t.label)}">+</button>
+            ${t.kcalEach ? `<small>${round(t.n * t.kcalEach).toLocaleString()} kcal</small>` : ""}
+          </div>`).join("")}
           <div class="counter-row">
             <span>Kibbles today</span>
             <button class="cbtn kibble-piece" id="kibbleMinus" aria-label="One less kibble" ${today.kibbles ? "" : "disabled"}>−</button>
@@ -1237,10 +1323,10 @@
           </div>
         </div>
         ${groups.length ? groups.map(g => {
-          const treats = (cat.treats || {})[g.key] || 0;
+          const treats = treatsOn(cat, g.key);
           const kibbles = (cat.kibbles || {})[g.key] || 0;
           const appetite = (cat.appetite || {})[g.key] || null;
-          const extras = treats || kibbles ? extrasHTML(g.key, treats, kibbles, cat) : "";
+          const extras = treats.n || kibbles ? extrasHTML(g.key, treats, kibbles, cat) : "";
           const appetiteEntry = appetite && (appetite.rating || appetite.note) ? appetiteHTML(g.key, appetite) : "";
           const hd = historyDayMap.get(g.key);
           const low = !!(baseline.value && hd && hd.intakeKnown && g.key !== catDay(Date.now()) && dayIntake(hd) < baseline.value * baseline.threshold);
@@ -1307,8 +1393,13 @@
       if (n) cat[field][k] = n; else delete cat[field][k];
       save(); render();
     };
-    $("#treatPlus").onclick = () => bumpDailyCount("treats", 1);
-    $("#treatMinus").onclick = () => bumpDailyCount("treats", -1);
+    const bumpTreat = (id, delta) => {
+      const k = catDay(Date.now());
+      setTreatCount(cat, k, id, treatCount(cat, k, id) + delta);
+      save(); render();
+    };
+    app.querySelectorAll("[data-treat-plus]").forEach(b => b.onclick = () => bumpTreat(b.dataset.treatPlus, 1));
+    app.querySelectorAll("[data-treat-minus]").forEach(b => b.onclick = () => bumpTreat(b.dataset.treatMinus, -1));
     $("#kibblePlus").onclick = () => bumpDailyCount("kibbles", 1);
     $("#kibbleMinus").onclick = () => bumpDailyCount("kibbles", -1);
     $("#feedBtn").onclick = () => openEntryDlg("#feedDlg");
@@ -1318,18 +1409,27 @@
     $("#importBtn").onclick = () => $("#importFile").click();
   }
 
+  // "Scale 4.17 → 7.17 oz (bowl 2.67)" for weigh-as-you-go entries
+  function scaleText(r) {
+    const { before, after, remaining, tare, u } = r.raw || {};
+    const nums = r.type === "check" ? [remaining] : [before, after].filter(v => v != null);
+    if (!nums.length) return "";
+    return `scale ${nums.map(v => round(v).toLocaleString()).join(" → ")} ${u}${tare ? ` (bowl ${round(tare)})` : ""}`;
+  }
   function entryHTML(r, cat) {
     let color, title, detail = [];
     if (r.type === "feed") {
       color = "var(--kibble)";
       title = r.after != null ? `Filled bowl to ${fmt(r.after, cat)} (added ${fmt(r.amount, cat)})` : `Added ${fmt(r.amount, cat)}`;
       if (r.foodName) detail.push(esc(r.foodName));
+      if (r.m === "scale") detail.push(scaleText(r));
       if (r.leftover != null) detail.push(`${fmt(r.leftover, cat)} ${r.after != null ? "in bowl before" : "was left"}`);
       if (r.eaten != null) detail.push(`${fmt(r.eaten, cat)} eaten since last check`);
       if (r.discarded) detail.push(`${fmt(r.discarded, cat)} thrown out`);
     } else {
       color = "var(--eaten)"; title = `${fmt(r.remaining, cat)} left in bowl`;
       detail.push(`${fmt(r.eaten, cat)} eaten since last check`);
+      if (r.m === "scale") detail.push(scaleText(r));
       if (r.emptied) detail.push(`leftovers thrown out`);
     }
     return `<div class="entry">
@@ -1343,9 +1443,9 @@
 
   function extrasHTML(key, treats, kibbles, cat) {
     const detail = [];
-    if (treats) detail.push(`${treats} treat${treats === 1 ? "" : "s"}${cat.treatKcal ? ` (${round(treats * cat.treatKcal).toLocaleString()} kcal)` : ""}`);
+    if (treats.n) detail.push(esc(treatSummary(treats.parts)));
     if (kibbles) detail.push(`${kibbles} kibble${kibbles === 1 ? "" : "s"}${cat.kibbleKcal ? ` (${round(kibbles * cat.kibbleKcal).toLocaleString()} kcal)` : ""}`);
-    const totalKcal = treats * (cat.treatKcal || 0) + kibbles * (cat.kibbleKcal || 0);
+    const totalKcal = treats.kcal + kibbles * (cat.kibbleKcal || 0);
     return `<div class="entry extras-entry">
       <span class="dot"></span>
       <div class="txt">Daily extras<small>${detail.join(", ")}${totalKcal ? ` · ${round(totalKcal).toLocaleString()} kcal total` : ""}</small></div>
@@ -1372,23 +1472,33 @@
     f.elements.date.value = key || catDay(Date.now());
     const loadCounts = () => {
       const k = f.elements.date.value;
-      f.elements.treats.value = (cat.treats || {})[k] || "";
+      // one field per treat type, plus plain treats (types removed since still show if that day used them)
+      const types = activeTreatTypes().slice();
+      for (const id of Object.keys((cat.treatLog || {})[k] || {})) {
+        const t = treatTypeById(id);
+        if (t && t.archived && !types.includes(t)) types.push(t);
+      }
+      const fields = [
+        ...(!types.length || treatCount(cat, k, "") ? [{ id: "", label: types.length ? "Other treats" : "Treats" }] : []),
+        ...types.map(t => ({ id: t.id, label: t.name }))
+      ];
+      $("#treatFields").innerHTML = fields.map(t => `<label>${esc(t.label)}
+        <input type="number" data-treat-id="${t.id}" min="0" step="1" inputmode="numeric" value="${treatCount(cat, k, t.id) || ""}">
+      </label>`).join("");
       f.elements.kibbles.value = (cat.kibbles || {})[k] || "";
     };
     loadCounts();
     f.elements.date.onchange = loadCounts;
     dlg.showModal();
-    f.elements.treats.focus();
+    const first = $("#treatFields input"); first && first.focus();
   }
 
   $("#extrasForm").addEventListener("submit", e => {
     const f = e.target, cat = activeCat(), k = f.elements.date.value;
     if (!k) { e.preventDefault(); return; }
-    const treats = Math.max(0, Math.floor(Number(f.elements.treats.value) || 0));
     const kibbles = Math.max(0, Math.floor(Number(f.elements.kibbles.value) || 0));
-    cat.treats = cat.treats || {};
+    $("#treatFields").querySelectorAll("[data-treat-id]").forEach(inp => setTreatCount(cat, k, inp.dataset.treatId, Number(inp.value)));
     cat.kibbles = cat.kibbles || {};
-    if (treats) cat.treats[k] = treats; else delete cat.treats[k];
     if (kibbles) cat.kibbles[k] = kibbles; else delete cat.kibbles[k];
     save(); render();
   });
@@ -1500,6 +1610,7 @@
       }
     }
     dlg.querySelectorAll(".unit").forEach(u => u.textContent = entryUnit);
+    updatePreview(sel === "#feedDlg" ? "feed" : "check");
     dlg.showModal();
     const first = form.querySelector("input[type=number]");
     first && first.focus();
@@ -1512,32 +1623,73 @@
     editingEntryId = null;
   }
 
+  // Read the forms into entries (null if the required number is missing). Used for saving and for the live preview.
+  const formNum = (f, name) => { const v = f.elements[name].value.trim(); return v === "" ? null : parseFloat(v); };
+  function readFeedForm(f, now = Date.now()) {
+    const t = new Date(f.elements.time.value).getTime() || now;
+    const food = f.elements.food.value || null;
+    if (f.dataset.mode === "scale") {
+      const after = formNum(f, "after");
+      if (after == null || !(after >= 0)) return null;
+      return { type: "feed", t, u: entryUnit, m: "scale", tare: entryTare, after, amount: null, leftover: formNum(f, "before"), discard: f.elements.discard.checked, food };
+    }
+    const amount = formNum(f, "amount");
+    if (amount == null || !(amount >= 0)) return null;
+    return { type: "feed", t, u: entryUnit, m: "eyeball", tare: 0, amount, after: null, leftover: formNum(f, "leftover"), discard: f.elements.discard.checked, food };
+  }
+  function readCheckForm(f, now = Date.now()) {
+    const remaining = formNum(f, "remaining");
+    if (remaining == null || !(remaining >= 0)) return null;
+    return { type: "check", t: new Date(f.elements.time.value).getTime() || now, u: entryUnit, m: f.dataset.mode, tare: entryTare, remaining, emptied: f.elements.emptied.checked };
+  }
+
+  // Live breakdown: run the draft through the same calculation the app uses, then show what it will record.
+  function updatePreview(kind) {
+    const f = $(kind === "feed" ? "#feedForm" : "#checkForm"), box = $(kind === "feed" ? "#feedPreview" : "#checkPreview");
+    const cat = activeCat();
+    const draft = cat && (kind === "feed" ? readFeedForm(f) : readCheckForm(f));
+    if (!draft) { box.innerHTML = ""; return; }
+    const others = cat.events.filter(e => e.id !== editingEntryId);
+    const { rows } = compute({ ...cat, events: [...others, { ...draft, id: "__draft" }] });
+    const r = rows.find(x => x.id === "__draft");
+    const u = cat.unit, show = v => fmt(v, cat);
+    const line = (label, value, cls = "") => `<div class="${cls}"><span>${label}</span><b>${value}</b></div>`;
+    const reading = (v, net) => draft.tare ? `${round(v)} − ${round(draft.tare)} bowl = ${show(net)}` : show(net);
+    let html = "";
+    if (kind === "feed") {
+      if (draft.leftover != null) html += line(draft.m === "scale" ? "Food before adding" : "Left before adding", reading(draft.leftover, r.leftover));
+      if (r.eaten != null) html += line("Eaten since last check", show(r.eaten));
+      if (r.discarded) html += line("Thrown out", show(r.discarded));
+      if (draft.m === "scale") html += line("Food after adding", reading(draft.after, r.after));
+      html += line("Added", show(r.amount));
+      html += line("In the bowl after", show(r.levelAfter), "total");
+    } else {
+      html += line("Food in bowl", reading(draft.remaining, r.remaining));
+      html += line("Eaten since last check", show(r.eaten));
+      if (r.discarded) html += line("Thrown out", show(r.discarded));
+      html += line("In the bowl after", show(r.levelAfter), "total");
+    }
+    box.innerHTML = html;
+  }
+  ["input", "change"].forEach(ev => {
+    $("#feedForm").addEventListener(ev, () => updatePreview("feed"));
+    $("#checkForm").addEventListener(ev, () => updatePreview("check"));
+  });
+
   $("#feedForm").addEventListener("submit", e => {
     const f = e.target, cat = activeCat();
-    const t = new Date(f.elements.time.value).getTime() || Date.now();
-    const num = name => { const v = f.elements[name].value.trim(); return v === "" ? null : parseFloat(v); };
-    const food = f.elements.food.value || null;
-    if (!$("#foodPickRow").hidden) cat.lastFood = food || "";
-    if (f.dataset.mode === "scale") {
-      const after = num("after");
-      if (!(after >= 0)) { e.preventDefault(); return; }
-      saveEntry(cat, { type: "feed", t, u: entryUnit, m: "scale", tare: entryTare, after, amount: null, leftover: num("before"), discard: f.elements.discard.checked, food });
-    } else {
-      const amount = num("amount");
-      if (!(amount >= 0)) { e.preventDefault(); return; }
-      saveEntry(cat, { type: "feed", t, u: entryUnit, m: "eyeball", tare: 0, amount, after: null, leftover: num("leftover"), discard: f.elements.discard.checked, food });
-    }
+    const data = readFeedForm(f);
+    if (!data) { e.preventDefault(); return; }
+    if (!$("#foodPickRow").hidden) cat.lastFood = data.food || "";
+    saveEntry(cat, data);
     save(); render();
   });
 
   $("#checkForm").addEventListener("submit", e => {
     const f = e.target, cat = activeCat();
-    const remaining = parseFloat(f.elements.remaining.value);
-    if (!(remaining >= 0)) { e.preventDefault(); return; }
-    saveEntry(cat, {
-      type: "check", t: new Date(f.elements.time.value).getTime() || Date.now(),
-      u: entryUnit, m: f.dataset.mode, tare: entryTare, remaining, emptied: f.elements.emptied.checked
-    });
+    const data = readCheckForm(f);
+    if (!data) { e.preventDefault(); return; }
+    saveEntry(cat, data);
     save(); render();
   });
 
@@ -1557,7 +1709,42 @@
     }).join("") : `<p class="empty">No foods yet.</p>`;
     $("#foodList").querySelectorAll("[data-food-edit]").forEach(b => b.onclick = () => openFoodDlg(foodById(b.dataset.foodEdit)));
   }
-  function openFoodsDlg() { renderFoodList(); $("#foodsDlg").showModal(); }
+  function renderTreatList() {
+    const types = activeTreatTypes();
+    $("#treatList").innerHTML = types.length ? types.map(t => `<div class="food-item"><div class="txt"><b>${esc(t.name)}</b>
+        <small>${round(t.kcal).toLocaleString()} kcal per treat</small></div>
+        <button class="ghost" data-treat-edit="${t.id}">Edit</button></div>`).join("") : `<p class="empty">No treats yet.</p>`;
+    $("#treatList").querySelectorAll("[data-treat-edit]").forEach(b => b.onclick = () => openTreatDlg(treatTypeById(b.dataset.treatEdit)));
+  }
+  let editingTreatId = null;
+  function openTreatDlg(t) {
+    const f = $("#treatForm");
+    f.reset();
+    editingTreatId = t ? t.id : null;
+    $("#treatDlgTitle").textContent = t ? "Edit treat" : "Add a treat";
+    $("#deleteTreatBtn").hidden = !t;
+    if (t) { f.elements.name.value = t.name; f.elements.kcal.value = t.kcal; }
+    $("#treatDlg").showModal();
+    f.elements.name.focus();
+  }
+  $("#treatForm").addEventListener("submit", e => {
+    const f = e.target;
+    const name = f.elements.name.value.trim(), kcal = parseFloat(f.elements.kcal.value);
+    if (!name || !(kcal >= 0)) { e.preventDefault(); return; }
+    state.treatTypes = state.treatTypes || [];
+    const existing = editingTreatId && treatTypeById(editingTreatId);
+    if (existing) Object.assign(existing, { name, kcal });
+    else state.treatTypes.push({ id: uid(), name, kcal });
+    save(); renderTreatList(); render();
+  });
+  $("#newTreatBtn").onclick = () => openTreatDlg(null);
+  $("#deleteTreatBtn").onclick = () => {
+    const t = treatTypeById(editingTreatId);
+    if (!t || !confirm(`Remove ${t.name}? Past days keep its count and calories.`)) return;
+    t.archived = true;
+    $("#treatDlg").close(); save(); renderTreatList(); render();
+  };
+  function openFoodsDlg() { renderFoodList(); renderTreatList(); $("#foodsDlg").showModal(); }
   function syncFoodForm() {
     const per = $("#foodForm").elements.per.value;
     $("#foodWeightRow").hidden = !(per === "pouches" || per === "cups");
@@ -1822,6 +2009,8 @@
     if (opts.need && need && kpu) lines.push({ v: need / kpu, color: "var(--danger)", dash: "2 3" });
     const ax = { unit: unitPlural(cat.unit), k: kpu };
     const usedFoods = [...new Set(rows.filter(r => r.food && catDay(r.t) >= opts.start && catDay(r.t) <= opts.end).map(r => r.food))].map(foodById).filter(Boolean);
+    const usedTreats = [...new Set(Object.entries(cat.treatLog || {}).filter(([k]) => k >= opts.start && k <= opts.end).flatMap(([, day]) => Object.keys(day)))].map(treatTypeById).filter(Boolean);
+    const reportTreats = usedTreats.map(t => `${t.name} (${round(t.kcal).toLocaleString()} kcal each)`).join(", ");
     const reportFoods = usedFoods.map(f => `${f.name} (${round(f.kcal).toLocaleString()} kcal/${perLabel(f.per)})`).join(", ");
     const generated = new Date().toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -1898,7 +2087,7 @@
     return `<div class="report-head">
         <h1>${esc(cat.name)} — food intake report</h1>
         <p>${esc(fullDate(opts.start))} through ${esc(fullDate(opts.end))} · generated ${esc(generated)}</p>
-        <p>Recorded weight: ${esc(weight)}${reportFoods ? ` · Foods: ${esc(reportFoods)}` : cat.kcal ? ` · Food energy: ${round(cat.kcal).toLocaleString()} kcal per ${esc(unitSingular(cat.unit))}` : ""}</p>
+        <p>Recorded weight: ${esc(weight)}${reportFoods ? ` · Foods: ${esc(reportFoods)}` : cat.kcal ? ` · Food energy: ${round(cat.kcal).toLocaleString()} kcal per ${esc(unitSingular(cat.unit))}` : ""}${reportTreats ? ` · Treats: ${esc(reportTreats)}` : ""}</p>
       </div>
       <div class="report-summary">${stats}</div>
       ${chart}
@@ -1940,7 +2129,7 @@
   // ---------- Backup ----------
   // Data only lives in this browser, so nudge toward a backup every 30 days.
   function backupNote() {
-    if (!state.cats.some(c => c.events.length || Object.keys(c.treats || {}).length || Object.keys(c.kibbles || {}).length || Object.keys(c.appetite || {}).length)) return "";
+    if (!state.cats.some(c => c.events.length || Object.keys(c.treats || {}).length || Object.keys(c.treatLog || {}).length || Object.keys(c.kibbles || {}).length || Object.keys(c.appetite || {}).length)) return "";
     const last = state.lastBackup;
     if (!last || Date.now() - last > 30 * 864e5) {
       return `<p class="backup-warn"><b>Last backup: ${last ? ago(last) : "never"}.</b> Your log is only saved in this browser, so download a backup now and then.</p>`;
