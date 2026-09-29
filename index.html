@@ -178,6 +178,32 @@
   .baseline-summary.low { border-left: 4px solid var(--danger); }
   textarea { resize: vertical; min-height: 84px; }
   [hidden] { display: none !important; }
+  .views { max-width: 760px; margin: 0 auto; padding: 12px 16px 0; display: flex; gap: 4px; }
+  .views button {
+    border: none; background: none; padding: 6px 12px; border-radius: 999px;
+    font-weight: 800; color: var(--muted);
+  }
+  .views button[aria-selected="true"] { background: var(--card); color: var(--ink); }
+  #calcView { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+  .calc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; }
+  .calc-grid small { font-weight: 400; color: var(--muted); }
+  .calc-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 560px) {
+    .calc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .calc-grid.calc-pair { grid-template-columns: 1fr; }
+  }
+  .calc-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .calc-table th, .calc-table td { text-align: right; padding: 7px 6px; border-bottom: 1px solid var(--line); }
+  .calc-table th:first-child, .calc-table td:first-child { text-align: left; }
+  .calc-table th { color: var(--muted); font-size: .85rem; font-weight: 800; }
+  .calc-table td.est { color: var(--muted); }
+  .kcal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+  .kcal-grid div { border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+  .kcal-grid b { display: block; font-size: 1.2rem; font-weight: 900; }
+  .kcal-grid span { color: var(--muted); font-size: .85rem; }
+  .calc-notes { color: var(--muted); font-size: .88rem; padding-left: 18px; margin: 10px 0 0; }
+  .calc-notes li { margin: 3px 0; }
+  .calc-warn { color: var(--danger); font-weight: 700; }
   .top-actions { display: flex; gap: 2px; }
   h2.list-head { margin-top: 18px; }
   #treatList .empty { padding: 4px 0 8px; }
@@ -247,7 +273,7 @@
       --treat: #A74468; --piece: #66509D;
     }
     body { background: #fff !important; color: #111 !important; font-size: 10pt; }
-    body > main, body > dialog, body > #importFile { display: none !important; }
+    body > main, body > dialog, body > #importFile, body > .views, body > #calcView { display: none !important; }
     #printReport { display: block !important; max-width: none; margin: 0; padding: 0; }
     .report-head { border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 12px; }
     .report-head h1 { font-size: 19pt; margin: 0 0 3px; }
@@ -290,7 +316,53 @@
 </style>
 </head>
 <body>
+<nav class="views" role="tablist" aria-label="View">
+  <button role="tab" data-view="tracker" aria-selected="true">Tracker</button>
+  <button role="tab" data-view="calc" aria-selected="false">Food calculator</button>
+</nav>
 <main id="app"></main>
+
+<!-- Food calculator: works from label values only. Nothing here is saved or used elsewhere. -->
+<section id="calcView" hidden>
+  <section class="panel">
+    <h2>Food calculator</h2>
+    <p class="panel-note">Estimate calories and the nutrient breakdown from a food label. Nothing here is saved or changes your tracking.</p>
+    <form id="calcForm" autocomplete="off" onsubmit="return false">
+      <label>The label values are
+        <select name="basis">
+          <option value="ga">Guaranteed analysis (as fed)</option>
+          <option value="af">Typical analysis, as fed</option>
+          <option value="dm">Typical analysis, dry matter</option>
+        </select>
+        <span class="hint" id="basisHint"></span>
+      </label>
+      <div class="calc-grid">
+        <label>Protein %<input type="number" name="protein" min="0" max="100" step="any" inputmode="decimal"></label>
+        <label>Fat %<input type="number" name="fat" min="0" max="100" step="any" inputmode="decimal"></label>
+        <label>Fiber %<input type="number" name="fiber" min="0" max="100" step="any" inputmode="decimal"></label>
+        <label>Moisture % <small class="as-fed-tag">(as fed)</small><input type="number" name="moisture" min="0" max="99" step="any" inputmode="decimal"></label>
+        <label>Ash % <small>(optional)</small><input type="number" name="ash" min="0" max="100" step="any" inputmode="decimal"></label>
+        <label class="tna-only">Carbohydrate % <small>(optional)</small><input type="number" name="carbs" min="0" max="100" step="any" inputmode="decimal"></label>
+      </div>
+      <div class="calc-grid calc-pair">
+        <label>Can / package size <small>(optional)</small>
+          <div class="row">
+            <input type="number" name="size" min="0" step="any" inputmode="decimal" aria-label="Size">
+            <select name="sizeUnit" aria-label="Unit"><option value="oz">oz</option><option value="g">g</option></select>
+          </div>
+        </label>
+        <label>Label calories <small>(optional)</small>
+          <div class="row">
+            <input type="number" name="labelKcal" min="0" step="any" inputmode="decimal" aria-label="Label calories">
+            <select name="labelPer" aria-label="Per"><option value="kg">kcal/kg</option><option value="can">kcal/can</option><option value="cup">kcal/cup</option></select>
+          </div>
+        </label>
+      </div>
+      <button type="button" class="btn plain" id="calcClear">Clear</button>
+    </form>
+  </section>
+  <section class="panel" id="calcOut" aria-live="polite"></section>
+</section>
 
 <!-- Add food -->
 <dialog id="feedDlg">
@@ -2147,6 +2219,110 @@
       alert("That file isn't a backup from this app. Choose a .json file made with “Download backup”.");
     }
   });
+
+  // ---------- View switch (tracker / food calculator) ----------
+  // The calculator lives outside #app, so the tracker's re-render never clears what's typed in it.
+  document.querySelectorAll(".views [data-view]").forEach(b => b.onclick = () => {
+    const calc = b.dataset.view === "calc";
+    document.querySelectorAll(".views [data-view]").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+    $("#app").hidden = calc;
+    $("#calcView").hidden = !calc;
+    window.scrollTo(0, 0);
+  });
+
+  // ---------- Food calculator ----------
+  // Nothing here is saved. Calculations:
+  //  • Dry matter basis (DMB) = as fed ÷ (100 − moisture) × 100
+  //  • Carbohydrate (NFE) = 100 − protein − fat − fiber − moisture − ash, unless the label gives it
+  //  • Ash, when not listed, is estimated at 8% of dry matter
+  //  • Modified Atwater (what labels use): ME kcal/kg = 10 × (3.5 × protein + 8.5 × fat + 3.5 × carbs)
+  //  • NRC 2006 for cats: GE = 5.7P + 9.4F + 4.1(carbs + fiber); energy digestibility % = 87.9 − 0.88 × fiber(DM%);
+  //    ME = GE × digestibility − 0.77 × P   (per 100 g as fed)
+  function calcFood() {
+    const f = $("#calcForm").elements, out = $("#calcOut");
+    const basis = f.basis.value;
+    const val = n => { const v = f[n].value.trim(); return v === "" ? null : parseFloat(v); };
+    document.querySelectorAll("#calcForm .tna-only").forEach(el => el.hidden = basis === "ga");
+    $("#basisHint").textContent = {
+      ga: "Protein and fat are minimums, fiber and moisture maximums, so the real food usually has a little more protein and fat than shown here.",
+      af: "Average values as the food comes out of the can or bag. Often on the maker's website.",
+      dm: "Average values with the water removed. Enter moisture as fed so the app can convert back."
+    }[basis];
+    const P = val("protein"), F = val("fat"), Fi = val("fiber") ?? 0, M = val("moisture");
+    if (P == null || F == null || M == null) {
+      out.innerHTML = `<p class="panel-note">Enter at least protein, fat and moisture to see results.</p>`;
+      return;
+    }
+    if (!(M < 100)) { out.innerHTML = `<p class="calc-warn">Moisture must be under 100%.</p>`; return; }
+    const dmFrac = (100 - M) / 100;
+    // everything as fed
+    const toAF = v => v == null ? null : basis === "dm" ? v * dmFrac : v;
+    const pA = toAF(P), fA = toAF(F), fiA = toAF(Fi);
+    let ashA = toAF(val("ash")), ashEst = false;
+    if (ashA == null) { ashA = 8 * dmFrac; ashEst = true; }
+    let cA = basis === "ga" ? null : toAF(val("carbs")), carbEst = false;
+    const byDiff = 100 - pA - fA - fiA - M - ashA;
+    if (cA == null) { cA = Math.max(0, byDiff); carbEst = true; }
+    const over = pA + fA + fiA + M + ashA > 100.5;
+    const dmb = v => v / dmFrac;
+
+    // calories per 100 g as fed
+    const atw = { p: 3.5 * pA, f: 8.5 * fA, c: 3.5 * cA };
+    const atwTot = atw.p + atw.f + atw.c;
+    const ge = 5.7 * pA + 9.4 * fA + 4.1 * (cA + fiA);
+    const dig = Math.max(0, 87.9 - 0.88 * dmb(fiA)) / 100;
+    const nrc = Math.max(0, ge * dig - 0.77 * pA);
+
+    const nrcDiff = atwTot ? Math.round(Math.abs(nrc / atwTot - 1) * 100) : 0;
+    const pct = v => `${round(v).toLocaleString()}%`;
+    const row = (name, af, dm, me, est) => `<tr><td>${name}${est ? " <small>(est.)</small>" : ""}</td>
+      <td${est ? ' class="est"' : ""}>${pct(af)}</td><td${est ? ' class="est"' : ""}>${dm == null ? "—" : pct(dm)}</td><td>${me == null ? "" : pct(me)}</td></tr>`;
+    const size = val("size"), sizeG = size > 0 ? size * GRAMS[f.sizeUnit.value] : 0;
+    const perKg = x => x * 10;
+    const kcalCards = (label, per100) => `
+      <div><b>${Math.round(perKg(per100)).toLocaleString()}</b><span>kcal/kg · ${label}</span></div>
+      <div><b>${round(per100 * GRAMS.oz / 100)}</b><span>kcal per oz</span></div>
+      ${sizeG ? `<div><b>${Math.round(per100 * sizeG / 100)}</b><span>kcal per ${round(size)} ${f.sizeUnit.value} can</span></div>` : ""}`;
+
+    // compare with the label's calories
+    let labelNote = "";
+    const lk = val("labelKcal");
+    if (lk > 0) {
+      const per = f.labelPer.value;
+      const labelPerKg = per === "kg" ? lk : per === "can" && sizeG ? lk / sizeG * 1000 : null;
+      labelNote = labelPerKg
+        ? `<li>The label's ${round(lk)} kcal/${per} is ${Math.round(labelPerKg)} kcal/kg, ${Math.abs(Math.round((perKg(atwTot) / labelPerKg - 1) * 100))}% ${perKg(atwTot) >= labelPerKg ? "below" : "above"} this estimate${Math.abs(perKg(atwTot) / labelPerKg - 1) < 0.05 ? " (a close match)" : ""}.${basis === "ga" && labelPerKg > perKg(atwTot) * 1.05 ? " That's common with a guaranteed analysis: protein and fat are listed as minimums, and the real amounts are usually higher." : ""}</li>`
+        : per === "can" ? `<li>Enter the can size to compare with the label's kcal per can.</li>` : `<li>Per-cup calories can't be compared without the cup's weight.</li>`;
+    }
+
+    out.innerHTML = `
+      <h2>Results</h2>
+      ${over ? `<p class="calc-warn">These values add up to more than 100%. Check the numbers you entered.</p>` : ""}
+      <table class="calc-table">
+        <thead><tr><th>Nutrient</th><th>As fed</th><th>Dry matter</th><th>% of calories</th></tr></thead>
+        <tbody>
+          ${row("Protein", pA, dmb(pA), atw.p / atwTot * 100)}
+          ${row("Fat", fA, dmb(fA), atw.f / atwTot * 100)}
+          ${row("Carbohydrate", cA, dmb(cA), atw.c / atwTot * 100, carbEst)}
+          ${row("Fiber", fiA, dmb(fiA), null)}
+          ${row("Ash", ashA, dmb(ashA), null, ashEst)}
+          ${row("Moisture", M, null, null)}
+        </tbody>
+      </table>
+      <div class="kcal-grid">${kcalCards("label method", atwTot)}</div>
+      <p class="panel-note">NRC 2006 cat estimate: <b>${Math.round(perKg(nrc)).toLocaleString()} kcal/kg</b> (${round(nrc * GRAMS.oz / 100)} kcal/oz${sizeG ? `, ${Math.round(nrc * sizeG / 100)} per can` : ""}). That's ${nrcDiff < 3 ? "about the same as" : `${nrcDiff}% ${nrc > atwTot ? "higher than" : "lower than"}`} the label method. It uses a more detailed formula that also allows for fiber.</p>
+      <ul class="calc-notes">
+        <li>“% of calories” is the share of metabolizable energy (ME) from protein, fat and carbohydrate, using the label method.</li>
+        ${carbEst ? `<li>Carbohydrate is worked out by difference: 100 minus everything else.</li>` : ""}
+        ${ashEst ? `<li>Ash isn't listed, so it's estimated at 8% of dry matter. Entering the real value makes the carbohydrate figure more accurate.</li>` : ""}
+        ${basis === "ga" ? `<li>Guaranteed values are minimums and maximums, not exact amounts, so treat these as estimates.</li>` : ""}
+        ${labelNote}
+      </ul>`;
+  }
+  $("#calcForm").addEventListener("input", calcFood);
+  $("#calcForm").addEventListener("change", calcFood);
+  $("#calcClear").onclick = () => { $("#calcForm").reset(); calcFood(); };
+  calcFood();
 
   // refresh "x min ago" every minute
   setInterval(() => { if (!document.querySelector("dialog[open]")) render(); }, 60000);

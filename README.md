@@ -16,6 +16,10 @@ Save each food under **Foods** with its calories (per can, cup, oz or kg, plus t
 
 Add treat types under **Foods** (name and calories per treat). Each gets its own +/− counter on the main screen, and counts are kept per pet and per day. History shows each day's treats by name, and the vet report lists the treat types used. (Counted kibble is now just another treat type; older kibble counts are moved into a "Kibble" treat automatically.)
 
+## Food calculator
+
+The **Food calculator** tab estimates a food's as-fed and dry-matter percentages, the share of calories from protein, fat and carbohydrate (% ME), and calories (kcal/kg, per oz and per can) from its guaranteed or typical analysis. It uses the Modified Atwater method that labels use, with an NRC 2006 cat estimate alongside. Nothing entered there is saved or affects tracking.
+
 ## Appetite tracking
 
 The app calculates 3-, 7-, 14-, and 30-day completed-day intake averages and compares them with a personal baseline. By default the baseline is the median of the most recent 30 completed logged days; a fixed historical baseline range and the low-intake threshold can be configured in **Baseline settings**. Appetite ratings and free-text appetite notes can be added or edited for any day from History.
